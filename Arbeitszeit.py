@@ -59,12 +59,13 @@ def normalize_time_field(key):
         return
     try:
         st.session_state[key] = normalize_time_input(value)
-    except:
+    except ValueError:
         pass
 
 
-def time_to_minutes(t):
-    t = normalize_time_input(t)
+def time_to_minutes(t, assume_normalized=False):
+    if not assume_normalized:
+        t = normalize_time_input(t)
     h, m = map(int, t.split(":"))
     return h * 60 + m
 
@@ -81,8 +82,34 @@ def is_valid_time_format(t):
     try:
         normalize_time_input(t)
         return True
-    except:
+    except ValueError:
         return False
+
+
+def allocate_exact_targets(total_minutes, active_names, percents):
+    """
+    Verteilt Soll-Minuten proportional so, dass die Summe exakt total_minutes ist.
+    Largest-Remainder-Verfahren (Hamilton-Methode).
+    """
+    raw_values = []
+    base_targets = {}
+
+    for name, p in zip(active_names, percents):
+        raw = total_minutes * p / 100
+        base = int(raw)
+        base_targets[name] = base
+        raw_values.append((name, raw - base))
+
+    remainder = total_minutes - sum(base_targets.values())
+
+    # Stabile Reihenfolge bei Gleichstand: Bucket-Name
+    raw_values.sort(key=lambda x: (-x[1], x[0]))
+
+    for i in range(remainder):
+        name = raw_values[i][0]
+        base_targets[name] += 1
+
+    return base_targets
 
 
 def score_assignment(assignments, targets):
@@ -139,6 +166,9 @@ def fast_distribute_days(free_days, targets, max_iterations=400):
         bucket_sums[best_bucket] += day["minutes"]
 
     current_score = sum(abs(bucket_sums[b] - targets[b]) for b in bucket_names)
+    if current_score == 0:
+        return assignments
+
     improved = True
     iterations = 0
 
@@ -172,6 +202,8 @@ def fast_distribute_days(free_days, targets, max_iterations=400):
                         bucket_sums[src] = src_new
                         bucket_sums[dst] = dst_new
                         current_score += delta
+                        if current_score == 0:
+                            return assignments
                         improved = True
                         break
 
@@ -213,6 +245,8 @@ def fast_distribute_days(free_days, targets, max_iterations=400):
                             bucket_sums[b1] = s1_new
                             bucket_sums[b2] = s2_new
                             current_score += delta
+                            if current_score == 0:
+                                return assignments
                             improved = True
                             break
 
@@ -247,10 +281,7 @@ def calculate_distribution(num_buckets, percents, all_day_inputs):
                 raise ValueError(f"Tag {i} hat eine feste Kostenstelle, aber keine Zeit.")
             continue
 
-        if not is_valid_time_format(time_value):
-            raise ValueError(f"Ungültiges Zeitformat bei Tag {i}: '{time_value}'. Bitte HH:MM verwenden.")
-
-        minutes = time_to_minutes(time_value)
+        minutes = time_to_minutes(time_value, assume_normalized=True)
         day = {
             "day": i,
             "time": time_value,
@@ -273,12 +304,11 @@ def calculate_distribution(num_buckets, percents, all_day_inputs):
 
     total_minutes = sum(d["minutes"] for d in all_days)
 
-    targets = {}
+    targets = allocate_exact_targets(total_minutes, active_names, percents)
     remaining_targets = {}
 
-    for name, p in zip(active_names, percents):
-        target = round(total_minutes * p / 100)
-        targets[name] = target
+    for name in active_names:
+        target = targets[name]
         fixed_sum = sum(d["minutes"] for d in fixed_assignments[name])
         remaining_targets[name] = max(0, target - fixed_sum)
 
