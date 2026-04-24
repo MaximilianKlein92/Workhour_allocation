@@ -21,6 +21,14 @@ def is_weekday_in_current_month(day_number):
     return date(year, month, day_number).weekday() < 5
 
 
+def get_weekday_short_name(day_number):
+    weekday_names = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
+    year, month, days_in_month = get_current_month_info()
+    if day_number < 1 or day_number > days_in_month:
+        return ""
+    return weekday_names[date(year, month, day_number).weekday()]
+
+
 def normalize_time_input(value: str) -> str:
     """
     Macht aus:
@@ -471,61 +479,80 @@ with col2:
     )
 
     day_inputs = []
-    days_per_row = 3
     day_validation_errors = []
 
-    for row_start in range(0, MAX_DAYS, days_per_row):
-        row_cols = st.columns(days_per_row)
+    header_cols = st.columns([0.55, 0.85, 1.15, 1.25, 1.7])
+    header_cols[0].markdown("**Tag**")
+    header_cols[1].markdown("**Wochentag**")
+    header_cols[2].markdown("**Zeit**")
+    header_cols[3].markdown("**Fest**")
+    header_cols[4].markdown("**Status**")
 
-        for offset, col in enumerate(row_cols):
-            i = row_start + offset
-            if i >= MAX_DAYS:
-                continue
+    for i in range(days_in_month):
+        row_cols = st.columns([0.55, 0.85, 1.15, 1.25, 1.7])
 
-            with col:
-                day_number = i + 1
-                if is_weekday_in_current_month(day_number):
-                    st.markdown(
-                        f"<div style='background-color:rgba(245, 158, 11, 0.25); color:inherit; border:1px solid rgba(245, 158, 11, 0.95); padding:0.35rem 0.5rem; border-radius:0.4rem; font-weight:600;'>Tag {day_number}</div>",
-                        unsafe_allow_html=True,
-                    )
-                else:
-                    st.markdown(f"**Tag {day_number}**")
+        day_number = i + 1
+        weekday_name = get_weekday_short_name(day_number)
+        is_weekday = is_weekday_in_current_month(day_number)
 
-                time_key = f"time_{i}"
-                fixed_key = f"fixed_{i}"
+        time_key = f"time_{i}"
+        fixed_key = f"fixed_{i}"
 
-                if time_key not in st.session_state:
-                    st.session_state[time_key] = ""
-                if fixed_key not in st.session_state:
-                    st.session_state[fixed_key] = ""
+        if time_key not in st.session_state:
+            st.session_state[time_key] = ""
+        if fixed_key not in st.session_state:
+            st.session_state[fixed_key] = ""
 
-                time_value = st.text_input(
-                    "Zeit",
-                    key=time_key,
-                    placeholder="HH:MM or HMM",
-                    label_visibility="collapsed",
-                    on_change=normalize_time_field,
-                    args=(time_key,)
+        with row_cols[0]:
+            st.write(day_number)
+
+        with row_cols[1]:
+            if is_weekday:
+                st.markdown(
+                    f"<div style='display:inline-block; background-color:rgba(245, 158, 11, 0.25); color:inherit; border:1px solid rgba(245, 158, 11, 0.95); padding:0.18rem 0.45rem; border-radius:0.35rem; font-weight:600;'>"
+                    f"{weekday_name}</div>",
+                    unsafe_allow_html=True,
                 )
+            else:
+                st.write(weekday_name)
 
-                fixed_bucket = st.selectbox(
-                    "Fest",
-                    options=[""] + active_names,
-                    key=fixed_key,
-                    label_visibility="collapsed"
-                )
+        with row_cols[2]:
+            time_value = st.text_input(
+                "Zeit",
+                key=time_key,
+                placeholder="HH:MM or HMM",
+                label_visibility="collapsed",
+                on_change=normalize_time_field,
+                args=(time_key,)
+            )
 
-                time_error = get_time_validation_message(time_value, fixed_bucket)
-                if time_error:
-                    day_validation_errors.append(time_error)
-                    st.error(time_error)
+        with row_cols[3]:
+            fixed_bucket = st.selectbox(
+                "Fest",
+                options=[""] + active_names,
+                key=fixed_key,
+                label_visibility="collapsed"
+            )
 
-                day_inputs.append((time_value, fixed_bucket))
+        time_error = get_time_validation_message(time_value, fixed_bucket)
+        with row_cols[4]:
+            if time_error:
+                day_validation_errors.append(time_error)
+                st.markdown(f"<span style='color:#dc2626;'>{time_error}</span>", unsafe_allow_html=True)
+            elif time_value != "" or fixed_bucket != "":
+                st.markdown("<span style='color:#16a34a;'>OK</span>", unsafe_allow_html=True)
+            else:
+                st.write("")
 
-calculate_clicked = st.button("Berechnen", type="primary")
+        day_inputs.append((time_value, fixed_bucket))
 
 can_calculate = percent_sum_valid and len(day_validation_errors) == 0
+
+if day_validation_errors:
+    unique_errors = list(dict.fromkeys(day_validation_errors))
+    st.warning("Bitte prüfe die markierten Zeilen: " + " | ".join(unique_errors))
+
+calculate_clicked = st.button("Berechnen", type="primary", disabled=not can_calculate)
 
 if calculate_clicked and can_calculate:
     try:
@@ -592,5 +619,3 @@ if calculate_clicked and can_calculate:
 
     except ValueError as e:
         st.error(str(e))
-elif calculate_clicked:
-    st.error("Bitte korrigiere zuerst die markierten Eingaben.")
