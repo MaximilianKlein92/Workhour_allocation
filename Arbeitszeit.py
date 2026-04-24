@@ -1,5 +1,6 @@
 import calendar
 import csv
+import random
 from datetime import date
 from pathlib import Path
 
@@ -239,6 +240,21 @@ def delete_previous_month_storage():
         storage_path.unlink()
         return True, storage_path
     return False, storage_path
+
+
+def get_random_media_image():
+    media_dir = Path(__file__).with_name("Media")
+    if not media_dir.exists():
+        return None
+
+    image_files = []
+    for extension in ("*.png", "*.jpg", "*.jpeg", "*.webp", "*.gif"):
+        image_files.extend(media_dir.glob(extension))
+
+    if not image_files:
+        return None
+
+    return random.choice(image_files)
 
 
 def normalize_time_input(value: str) -> str:
@@ -892,9 +908,21 @@ if save_clicked and can_submit:
     st.success(f"Daten für {user_key} in {calendar.month_name[current_month]} {current_year} gespeichert.")
 
 if calculate_clicked and can_submit:
+    loading_placeholder = st.empty()
     try:
+        random_image = get_random_media_image()
+        if random_image is not None:
+            st.subheader("Warte-Meme")
+            image_col_left, image_col_center, image_col_right = st.columns([1, 1, 1])
+            with image_col_center:
+                st.image(str(random_image), width=400)
+        else:
+            st.info("Kein Bild im Media-Ordner gefunden.")
+
+        loading_placeholder.caption("Berechnung läuft ...")
         save_user_month_state(user_key, current_year, current_month, num_buckets, percents, day_inputs)
         result = calculate_distribution(num_buckets, percents, day_inputs)
+        loading_placeholder.empty()
 
         st.success("Berechnung abgeschlossen.")
 
@@ -964,4 +992,5 @@ if calculate_clicked and can_submit:
             st.write("Keine")
 
     except ValueError as e:
+        loading_placeholder.empty()
         st.error(str(e))
