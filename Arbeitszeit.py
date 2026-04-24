@@ -107,6 +107,24 @@ def is_valid_time_format(t):
         return False
 
 
+def get_time_validation_message(time_value, fixed_bucket):
+    time_value = (time_value or "").strip()
+    fixed_bucket = (fixed_bucket or "").strip()
+
+    if time_value == "" and fixed_bucket != "":
+        return "Eine feste Kostenstelle braucht auch eine Zeit."
+
+    if time_value == "":
+        return None
+
+    try:
+        normalize_time_input(time_value)
+    except ValueError as error:
+        return str(error)
+
+    return None
+
+
 def allocate_exact_targets(total_minutes, active_names, percents):
     """
     Verteilt Soll-Minuten proportional so, dass die Summe exakt total_minutes ist.
@@ -435,7 +453,13 @@ with col1:
         )
         percents.append(p)
 
-    st.caption(f"Summe: {sum(percents):.2f} %")
+    percent_sum = sum(percents)
+    st.caption(f"Summe: {percent_sum:.2f} %")
+    percent_sum_valid = abs(percent_sum - 100.0) <= 0.001
+    if not percent_sum_valid:
+        st.error("Die Prozente müssen zusammen 100 % ergeben.")
+    else:
+        st.success("Prozentverteilung ist gültig.")
 
 with col2:
     st.subheader("Tageszeiten")
@@ -448,6 +472,7 @@ with col2:
 
     day_inputs = []
     days_per_row = 3
+    day_validation_errors = []
 
     for row_start in range(0, MAX_DAYS, days_per_row):
         row_cols = st.columns(days_per_row)
@@ -491,11 +516,18 @@ with col2:
                     label_visibility="collapsed"
                 )
 
+                time_error = get_time_validation_message(time_value, fixed_bucket)
+                if time_error:
+                    day_validation_errors.append(time_error)
+                    st.error(time_error)
+
                 day_inputs.append((time_value, fixed_bucket))
 
 calculate_clicked = st.button("Berechnen", type="primary")
 
-if calculate_clicked:
+can_calculate = percent_sum_valid and len(day_validation_errors) == 0
+
+if calculate_clicked and can_calculate:
     try:
         result = calculate_distribution(num_buckets, percents, day_inputs)
 
@@ -560,3 +592,5 @@ if calculate_clicked:
 
     except ValueError as e:
         st.error(str(e))
+elif calculate_clicked:
+    st.error("Bitte korrigiere zuerst die markierten Eingaben.")
