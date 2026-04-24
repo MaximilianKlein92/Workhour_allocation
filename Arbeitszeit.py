@@ -1,8 +1,24 @@
+import calendar
+from datetime import date
+
 import streamlit as st
 
 MAX_DAYS = 31
 MAX_BUCKETS = 10
 BUCKET_NAMES = list("ABCDEFGHIJ")
+
+
+def get_current_month_info():
+    today = date.today()
+    days_in_month = calendar.monthrange(today.year, today.month)[1]
+    return today.year, today.month, days_in_month
+
+
+def is_weekday_in_current_month(day_number):
+    year, month, days_in_month = get_current_month_info()
+    if day_number < 1 or day_number > days_in_month:
+        return False
+    return date(year, month, day_number).weekday() < 5
 
 
 def normalize_time_input(value: str) -> str:
@@ -418,7 +434,12 @@ with col1:
 
 with col2:
     st.subheader("Tageszeiten")
-    st.caption("Zeit als 0801, 801, 8:01 oder 08:01 eingeben. Feste Kostenstelle optional.")
+    current_year, current_month, days_in_month = get_current_month_info()
+    month_name = calendar.month_name[current_month]
+    st.caption(
+        f"Aktueller Monat: {month_name} {current_year}. "
+        "Werktage werden hervorgehoben. Zeit als 0801, 801, 8:01 oder 08:01 eingeben. Feste Kostenstelle optional."
+    )
 
     day_inputs = []
     days_per_row = 3
@@ -432,7 +453,14 @@ with col2:
                 continue
 
             with col:
-                st.markdown(f"**Tag {i+1}**")
+                day_number = i + 1
+                if is_weekday_in_current_month(day_number):
+                    st.markdown(
+                        f"<div style='background-color:rgba(245, 158, 11, 0.25); color:inherit; border:1px solid rgba(245, 158, 11, 0.95); padding:0.35rem 0.5rem; border-radius:0.4rem; font-weight:600;'>Tag {day_number}</div>",
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.markdown(f"**Tag {day_number}**")
 
                 time_key = f"time_{i}"
                 fixed_key = f"fixed_{i}"
