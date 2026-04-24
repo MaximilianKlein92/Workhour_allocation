@@ -1,0 +1,55 @@
+# Arbeitszeit-Tool (Streamlit)
+
+Dieses Tool verteilt erfasste Tageszeiten auf Kostenstellen (A-J) anhand einer prozentualen Soll-Verteilung.
+Zusätzlich koennen einzelne Tage fest einer Kostenstelle zugeordnet werden.
+
+## Was das Tool macht
+
+- Erfasst Tageszeiten fuer bis zu 31 Tage
+- Berechnet die Gesamtzeit
+- Verteilt Zeiten auf waehbare Kostenstellen (1 bis 10)
+- Beruecksichtigt feste Zuordnungen pro Tag
+- Verteilt den Rest automatisch mit einer schnellen Heuristik
+- Zeigt Soll/Ist/Abweichung je Kostenstelle
+
+## Features
+
+- Flexible Zeiteingabe:
+  - `801` -> `08:01`
+  - `0801` -> `08:01`
+  - `8:01` -> `08:01`
+  - `08:01` bleibt `08:01`
+- Validierung der Eingaben (ungueltige Zeiten werden abgefangen)
+- Prozentpruefung: Summe muss 100% ergeben
+- Detailansicht je Kostenstelle:
+  - fest zugeordnete Tage
+  - automatisch zugeordnete Tage
+  - Summen und Abweichung
+- Tabelle "Tag -> Projekt" fuer schnelle Kontrolle
+- Anzeige nicht zugewiesener Tage (falls vorhanden)
+- Verbesserte Tab-Reihenfolge bei der Eingabe (Tag 1 -> Tag 2 -> ...)
+
+## Starten
+
+Im Projektordner ausfuehren:
+
+```powershell
+streamlit run Arbeitszeit.py
+```
+
+Dann die im Terminal angezeigte URL im Browser oeffnen (meist `http://localhost:8501`).
+
+## Typischer Ablauf
+
+1. Anzahl Kostenstellen einstellen
+2. Prozentwerte pro Kostenstelle eingeben (Summe = 100)
+3. Tageszeiten eintragen
+4. Optional feste Kostenstelle pro Tag waehlen
+5. Auf "Berechnen" klicken
+6. Ergebnisse in Uebersicht und Details pruefen
+
+## Technische Hinweise
+
+- UI und Logik laufen in einer Streamlit-App
+- Die automatische Verteilung arbeitet heuristisch (greedy + lokale Verbesserung durch Moves/Swaps)
+- Ziel ist eine moeglichst kleine Gesamtabweichung zwischen Soll und Ist
