@@ -24,6 +24,8 @@ def is_weekday_in_current_month(day_number):
 def normalize_time_input(value: str) -> str:
     """
     Macht aus:
+    '8'    -> '08:00'
+    '08'   -> '08:00'
     '801'  -> '08:01'
     '0801' -> '08:01'
     '8:01' -> '08:01'
@@ -54,14 +56,17 @@ def normalize_time_input(value: str) -> str:
     if not value.isdigit():
         raise ValueError("Ungültiges Zeitformat")
 
-    if len(value) == 3:
+    if len(value) <= 2:
+        h = int(value)
+        m = 0
+    elif len(value) == 3:
         h = int(value[0])
         m = int(value[1:])
     elif len(value) == 4:
         h = int(value[:2])
         m = int(value[2:])
     else:
-        raise ValueError("Bitte Zeit als 3 oder 4 Ziffern eingeben, z. B. 801 oder 0801")
+        raise ValueError("Bitte Zeit als 1 bis 4 Ziffern eingeben, z. B. 8, 801 oder 0801")
 
     if not (0 <= h <= 23 and 0 <= m <= 59):
         raise ValueError("Ungültige Uhrzeit")
