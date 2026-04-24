@@ -102,18 +102,24 @@ def fast_distribute_days(free_days, targets, max_iterations=400):
     Schnelle heuristische Verteilung:
     1. Greedy initiale Zuweisung
     2. Lokale Verbesserung durch Move und Swap
+
+    Performance-Optimierung:
+    Der Score wird inkrementell über Bucket-Summen aktualisiert,
+    statt bei jedem Kandidaten die gesamte Lösung neu zu bewerten.
     """
     bucket_names = list(targets.keys())
     assignments = {b: [] for b in bucket_names}
+    bucket_sums = {b: 0 for b in bucket_names}
 
     free_days_sorted = sorted(free_days, key=lambda d: d["minutes"], reverse=True)
 
+    # Greedy initiale Zuweisung (mit laufenden Summen)
     for day in free_days_sorted:
         best_bucket = None
         best_score = None
 
         for bucket in bucket_names:
-            current_sum = sum(x["minutes"] for x in assignments[bucket])
+            current_sum = bucket_sums[bucket]
             new_sum = current_sum + day["minutes"]
             target = targets[bucket]
 
@@ -130,8 +136,9 @@ def fast_distribute_days(free_days, targets, max_iterations=400):
                 best_bucket = bucket
 
         assignments[best_bucket].append(day)
+        bucket_sums[best_bucket] += day["minutes"]
 
-    current_score = score_assignment(assignments, targets)
+    current_score = sum(abs(bucket_sums[b] - targets[b]) for b in bucket_names)
     improved = True
     iterations = 0
 
@@ -145,22 +152,28 @@ def fast_distribute_days(free_days, targets, max_iterations=400):
                 break
 
             for day in assignments[src][:]:
+                day_minutes = day["minutes"]
+                src_old = bucket_sums[src]
+                src_new = src_old - day_minutes
+                src_delta = abs(src_new - targets[src]) - abs(src_old - targets[src])
+
                 for dst in bucket_names:
                     if src == dst:
                         continue
 
-                    assignments[src].remove(day)
-                    assignments[dst].append(day)
+                    dst_old = bucket_sums[dst]
+                    dst_new = dst_old + day_minutes
+                    dst_delta = abs(dst_new - targets[dst]) - abs(dst_old - targets[dst])
 
-                    new_score = score_assignment(assignments, targets)
-
-                    if new_score < current_score:
-                        current_score = new_score
+                    delta = src_delta + dst_delta
+                    if delta < 0:
+                        assignments[src].remove(day)
+                        assignments[dst].append(day)
+                        bucket_sums[src] = src_new
+                        bucket_sums[dst] = dst_new
+                        current_score += delta
                         improved = True
                         break
-                    else:
-                        assignments[dst].remove(day)
-                        assignments[src].append(day)
 
                 if improved:
                     break
@@ -169,32 +182,39 @@ def fast_distribute_days(free_days, targets, max_iterations=400):
             continue
 
         # Tage zwischen zwei Buckets tauschen
-        for b1 in bucket_names:
+        for i, b1 in enumerate(bucket_names):
             if improved:
                 break
 
-            for b2 in bucket_names:
-                if b1 >= b2:
-                    continue
+            for b2 in bucket_names[i + 1:]:
+                s1_old = bucket_sums[b1]
+                s2_old = bucket_sums[b2]
 
                 for d1 in assignments[b1][:]:
+                    m1 = d1["minutes"]
+
                     for d2 in assignments[b2][:]:
-                        assignments[b1].remove(d1)
-                        assignments[b2].remove(d2)
-                        assignments[b1].append(d2)
-                        assignments[b2].append(d1)
+                        m2 = d2["minutes"]
 
-                        new_score = score_assignment(assignments, targets)
+                        s1_new = s1_old - m1 + m2
+                        s2_new = s2_old - m2 + m1
 
-                        if new_score < current_score:
-                            current_score = new_score
+                        delta = (
+                            abs(s1_new - targets[b1]) - abs(s1_old - targets[b1])
+                            + abs(s2_new - targets[b2]) - abs(s2_old - targets[b2])
+                        )
+
+                        if delta < 0:
+                            assignments[b1].remove(d1)
+                            assignments[b2].remove(d2)
+                            assignments[b1].append(d2)
+                            assignments[b2].append(d1)
+
+                            bucket_sums[b1] = s1_new
+                            bucket_sums[b2] = s2_new
+                            current_score += delta
                             improved = True
                             break
-                        else:
-                            assignments[b1].remove(d2)
-                            assignments[b2].remove(d1)
-                            assignments[b1].append(d1)
-                            assignments[b2].append(d2)
 
                     if improved:
                         break
