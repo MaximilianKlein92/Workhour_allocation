@@ -1,11 +1,16 @@
 import calendar
+import csv
 from datetime import date
+from pathlib import Path
 
 import streamlit as st
 
 MAX_DAYS = 31
 MAX_BUCKETS = 10
 BUCKET_NAMES = list("ABCDEFGHIJ")
+DEFAULT_BUCKET_COUNT = 2
+DEFAULT_PERCENT_VALUES = [20.0, 80.0] + [0.0] * 8
+MAX_SEGMENTS_PER_DAY = 2
 
 
 def get_current_month_info():
@@ -27,6 +32,213 @@ def get_weekday_short_name(day_number):
     if day_number < 1 or day_number > days_in_month:
         return ""
     return weekday_names[date(year, month, day_number).weekday()]
+
+
+def normalize_user_code(value):
+    return "".join(ch for ch in (value or "").strip() if ch.isalnum()).upper()
+
+
+def get_month_key(year, month):
+    return f"{year:04d}-{month:02d}"
+
+
+def get_data_directory():
+    data_dir = Path(__file__).with_name("data")
+    data_dir.mkdir(exist_ok=True)
+    return data_dir
+
+
+def get_month_storage_path(year, month):
+    return get_data_directory() / f"zeiten_{year:04d}-{month:02d}.csv"
+
+
+def get_previous_month_info():
+    today = date.today()
+    if today.month == 1:
+        year = today.year - 1
+        month = 12
+    else:
+        year = today.year
+        month = today.month - 1
+
+    days_in_month = calendar.monthrange(year, month)[1]
+    return year, month, days_in_month
+
+
+def get_storage_fieldnames():
+    return [
+        "month_key",
+        "initials",
+        "record_type",
+        "day",
+        "segment",
+        "time",
+        "fixed_bucket",
+        "num_buckets",
+    ] + [f"percent_{name}" for name in BUCKET_NAMES]
+
+
+def get_default_percents_for_bucket_count(num_buckets):
+    if num_buckets > 2:
+        even_value = round(100 / num_buckets, 2)
+        return [even_value] * num_buckets
+    return DEFAULT_PERCENT_VALUES[:num_buckets]
+
+
+def reset_user_workspace_state():
+    st.session_state["num_buckets"] = DEFAULT_BUCKET_COUNT
+    for i, name in enumerate(BUCKET_NAMES):
+        st.session_state[f"percent_{name}"] = DEFAULT_PERCENT_VALUES[i]
+    st.session_state["_last_num_buckets"] = DEFAULT_BUCKET_COUNT
+
+    for i in range(MAX_DAYS):
+        st.session_state[f"day_segments_{i}"] = 1
+        for segment_index in range(1, MAX_SEGMENTS_PER_DAY + 1):
+            st.session_state[f"time_{i}_{segment_index}"] = ""
+            st.session_state[f"fixed_{i}_{segment_index}"] = ""
+
+
+def load_user_month_state(user_code, year, month):
+    reset_user_workspace_state()
+
+    storage_path = get_month_storage_path(year, month)
+    if not storage_path.exists():
+        return False
+
+    with storage_path.open("r", newline="", encoding="utf-8") as file_handle:
+        rows = list(csv.DictReader(file_handle))
+
+    user_rows = [row for row in rows if normalize_user_code(row.get("initials")) == user_code]
+    if not user_rows:
+        return False
+
+    meta_row = next((row for row in user_rows if row.get("record_type") == "meta"), None)
+    if meta_row:
+        raw_bucket_count = meta_row.get("num_buckets", "").strip()
+        if raw_bucket_count.isdigit():
+            st.session_state["num_buckets"] = max(1, min(MAX_BUCKETS, int(raw_bucket_count)))
+
+        for name in BUCKET_NAMES:
+            raw_percent = meta_row.get(f"percent_{name}", "").strip()
+            if raw_percent == "":
+                continue
+            try:
+                st.session_state[f"percent_{name}"] = float(raw_percent)
+            except ValueError:
+                pass
+
+    for row in user_rows:
+        if row.get("record_type") != "day":
+            continue
+
+        raw_day = row.get("day", "").strip()
+        if not raw_day.isdigit():
+            continue
+
+        day_index = int(raw_day) - 1
+        if not (0 <= day_index < MAX_DAYS):
+            continue
+
+        raw_segment = row.get("segment", "").strip() or row.get("segment_index", "").strip()
+        if raw_segment.isdigit():
+            segment_index = int(raw_segment)
+        else:
+            segment_index = 1
+
+        if not (1 <= segment_index <= MAX_SEGMENTS_PER_DAY):
+            continue
+
+        st.session_state[f"time_{day_index}_{segment_index}"] = row.get("time", "").strip()
+        st.session_state[f"fixed_{day_index}_{segment_index}"] = row.get("fixed_bucket", "").strip()
+        st.session_state[f"day_segments_{day_index}"] = max(
+            st.session_state.get(f"day_segments_{day_index}", 1),
+            segment_index,
+        )
+
+    st.session_state["_last_num_buckets"] = int(st.session_state.get("num_buckets", DEFAULT_BUCKET_COUNT))
+
+    return True
+
+
+def build_user_month_rows(user_code, year, month, num_buckets, percents, all_day_inputs):
+    month_key = get_month_key(year, month)
+    rows = []
+
+    meta_row = {
+        "month_key": month_key,
+        "initials": user_code,
+        "record_type": "meta",
+        "day": "",
+        "time": "",
+        "fixed_bucket": "",
+        "num_buckets": str(num_buckets),
+    }
+
+    for name in BUCKET_NAMES:
+        meta_row[f"percent_{name}"] = ""
+
+    for name, percent in zip(BUCKET_NAMES[:num_buckets], percents):
+        meta_row[f"percent_{name}"] = f"{float(percent):.2f}"
+
+    rows.append(meta_row)
+
+    for day_number, day_input in enumerate(all_day_inputs, start=1):
+        for segment_index, segment in enumerate(day_input.get("segments", []), start=1):
+            time_value = (segment.get("time") or "").strip()
+            fixed_bucket = (segment.get("fixed_bucket") or "").strip().upper()
+
+            if time_value == "":
+                continue
+
+            row = {
+                "month_key": month_key,
+                "initials": user_code,
+                "record_type": "day",
+                "day": str(day_number),
+                "segment": str(segment_index),
+                "time": time_value,
+                "fixed_bucket": fixed_bucket,
+                "num_buckets": "",
+            }
+
+            for name in BUCKET_NAMES:
+                row[f"percent_{name}"] = ""
+
+            rows.append(row)
+
+    return rows
+
+
+def save_user_month_state(user_code, year, month, num_buckets, percents, all_day_inputs):
+    storage_path = get_month_storage_path(year, month)
+    storage_path.parent.mkdir(exist_ok=True)
+
+    fieldnames = get_storage_fieldnames()
+    existing_rows = []
+    if storage_path.exists():
+        with storage_path.open("r", newline="", encoding="utf-8") as file_handle:
+            existing_rows = list(csv.DictReader(file_handle))
+
+    remaining_rows = [
+        row for row in existing_rows
+        if normalize_user_code(row.get("initials")) != user_code
+    ]
+
+    rows_to_write = remaining_rows + build_user_month_rows(user_code, year, month, num_buckets, percents, all_day_inputs)
+
+    with storage_path.open("w", newline="", encoding="utf-8") as file_handle:
+        writer = csv.DictWriter(file_handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows_to_write)
+
+
+def delete_previous_month_storage():
+    year, month, _ = get_previous_month_info()
+    storage_path = get_month_storage_path(year, month)
+    if storage_path.exists():
+        storage_path.unlink()
+        return True, storage_path
+    return False, storage_path
 
 
 def normalize_time_input(value: str) -> str:
@@ -316,35 +528,42 @@ def calculate_distribution(num_buckets, percents, all_day_inputs):
     fixed_assignments = {name: [] for name in active_names}
     free_days = []
 
-    for i, (time_value, fixed_bucket) in enumerate(all_day_inputs, start=1):
-        time_value = time_value.strip()
-        fixed_bucket = fixed_bucket.strip().upper()
+    for i, day_input in enumerate(all_day_inputs, start=1):
+        segments = day_input.get("segments", [])
+        for segment_index, segment in enumerate(segments, start=1):
+            time_value = (segment.get("time") or "").strip()
+            fixed_bucket = (segment.get("fixed_bucket") or "").strip().upper()
 
-        if time_value != "":
-            time_value = normalize_time_input(time_value)
+            if time_value != "":
+                time_value = normalize_time_input(time_value)
 
-        if time_value == "":
+            if time_value == "":
+                if fixed_bucket != "":
+                    raise ValueError(
+                        f"Tag {i}, Segment {segment_index} hat eine feste Kostenstelle, aber keine Zeit."
+                    )
+                continue
+
+            minutes = time_to_minutes(time_value, assume_normalized=True)
+            day = {
+                "day": i,
+                "segment": segment_index,
+                "time": time_value,
+                "minutes": minutes
+            }
+            all_days.append(day)
+
             if fixed_bucket != "":
-                raise ValueError(f"Tag {i} hat eine feste Kostenstelle, aber keine Zeit.")
-            continue
-
-        minutes = time_to_minutes(time_value, assume_normalized=True)
-        day = {
-            "day": i,
-            "time": time_value,
-            "minutes": minutes
-        }
-        all_days.append(day)
-
-        if fixed_bucket != "":
-            if fixed_bucket not in active_names:
-                raise ValueError(
-                    f"Ungültige feste Kostenstelle bei Tag {i}: '{fixed_bucket}'. "
-                    f"Erlaubt: {', '.join(active_names)}"
-                )
-            fixed_assignments[fixed_bucket].append(day)
-        else:
-            free_days.append(day)
+                if fixed_bucket not in active_names:
+                    raise ValueError(
+                        f"Ungültige feste Kostenstelle bei Tag {i}, Segment {segment_index}: '{fixed_bucket}'. "
+                        f"Erlaubt: {', '.join(active_names)}"
+                    )
+                day["fixed_bucket"] = fixed_bucket
+                fixed_assignments[fixed_bucket].append(day)
+            else:
+                day["fixed_bucket"] = ""
+                free_days.append(day)
 
     if not all_days:
         raise ValueError("Bitte mindestens eine Zeit eintragen.")
@@ -388,6 +607,7 @@ def calculate_distribution(num_buckets, percents, all_day_inputs):
         for d in final_assignments[name]["fixed_days"]:
             day_project_rows.append({
                 "Tag": d["day"],
+                "Segment": d.get("segment", 1),
                 "Zeit": d["time"],
                 "Projekt": name,
                 "Art": "fest"
@@ -397,13 +617,23 @@ def calculate_distribution(num_buckets, percents, all_day_inputs):
         for d in final_assignments[name]["auto_days"]:
             day_project_rows.append({
                 "Tag": d["day"],
+                "Segment": d.get("segment", 1),
                 "Zeit": d["time"],
                 "Projekt": name,
                 "Art": "auto"
             })
             assigned_days.add(d["day"])
 
-    day_project_rows = sorted(day_project_rows, key=lambda x: x["Tag"])
+    day_project_rows = sorted(day_project_rows, key=lambda x: (x["Tag"], x.get("Segment", 1)))
+
+    day_assignment_counts = {}
+    for row in day_project_rows:
+        day_assignment_counts[row["Tag"]] = day_assignment_counts.get(row["Tag"], 0) + 1
+
+    split_days = sorted(day for day, count in day_assignment_counts.items() if count > 1)
+
+    for row in day_project_rows:
+        row["Geteilt"] = "Ja" if row["Tag"] in split_days else "Nein"
 
     leftovers = [d for d in all_days if d["day"] not in assigned_days]
     leftover_sum = sum(d["minutes"] for d in leftovers)
@@ -415,6 +645,7 @@ def calculate_distribution(num_buckets, percents, all_day_inputs):
         "targets": targets,
         "assignments": final_assignments,
         "day_project_rows": day_project_rows,
+        "split_days": split_days,
         "leftovers": leftovers,
         "leftover_sum": leftover_sum,
         "quality_score": score_assignment(
@@ -429,33 +660,75 @@ st.title("Zeitverteilung auf Kostenstellen A–J")
 
 st.markdown("Schnelle Verteilung mit fixer Zuordnung einzelner Tage und automatischer Restverteilung.")
 
+current_year, current_month, days_in_month = get_current_month_info()
+current_month_key = get_month_key(current_year, current_month)
+
+header_col1, header_col2, header_col3 = st.columns([1.3, 1.0, 1.0])
+
+with header_col1:
+    user_input = st.text_input("Benutzerkürzel", placeholder="MaKl", key="user_initials")
+    user_key = normalize_user_code(user_input)
+    if user_key:
+        loaded_user = st.session_state.get("_loaded_user")
+        loaded_month = st.session_state.get("_loaded_month")
+        if loaded_user != user_key or loaded_month != current_month_key:
+            loaded = load_user_month_state(user_key, current_year, current_month)
+            st.session_state["_loaded_user"] = user_key
+            st.session_state["_loaded_month"] = current_month_key
+            if loaded:
+                st.success(f"Daten für {user_key} aus {calendar.month_name[current_month]} {current_year} geladen.")
+            else:
+                st.info(f"Neuer Benutzer {user_key}. Leere Monatsansicht vorbereitet.")
+    else:
+        if st.session_state.get("_loaded_user"):
+            reset_user_workspace_state()
+        st.session_state["_loaded_user"] = ""
+        st.session_state["_loaded_month"] = current_month_key
+
+with header_col2:
+    st.info(f"Monat: {calendar.month_name[current_month]} {current_year}")
+
+with header_col3:
+    if st.button("Vorherigen Monat löschen"):
+        deleted, storage_path = delete_previous_month_storage()
+        if deleted:
+            st.success(f"Gelöscht: {storage_path.name}")
+        else:
+            st.info(f"Keine Datei gefunden: {storage_path.name}")
+
 col1, col2 = st.columns([1, 2])
 
 with col1:
-    num_buckets = st.number_input(
+    num_buckets = int(st.number_input(
         "Anzahl Kostenstellen",
         min_value=1,
         max_value=10,
-        value=2,
+        value=st.session_state.get("num_buckets", DEFAULT_BUCKET_COUNT),
         step=1
-    )
+    ))
+
+    previous_bucket_count = st.session_state.get("_last_num_buckets")
+    if previous_bucket_count != num_buckets:
+        new_defaults = get_default_percents_for_bucket_count(num_buckets)
+        for i, name in enumerate(BUCKET_NAMES[:num_buckets]):
+            st.session_state[f"percent_{name}"] = new_defaults[i]
+        st.session_state["_last_num_buckets"] = num_buckets
+    else:
+        stable_defaults = get_default_percents_for_bucket_count(num_buckets)
+        for i, name in enumerate(BUCKET_NAMES[:num_buckets]):
+            key = f"percent_{name}"
+            if key not in st.session_state:
+                st.session_state[key] = stable_defaults[i]
 
     st.subheader("Prozentverteilung")
     active_names = BUCKET_NAMES[:num_buckets]
     percents = []
 
-    default_values = [20.0, 80.0] + [0.0] * 8
-    if num_buckets > 2:
-        even_value = round(100 / num_buckets, 2)
-        default_values = [even_value] * num_buckets
-
     for i, name in enumerate(active_names):
-        default = default_values[i] if i < len(default_values) else 0.0
         p = st.number_input(
             f"{name} (%)",
             min_value=0.0,
             max_value=100.0,
-            value=float(default),
             step=1.0,
             key=f"percent_{name}"
         )
@@ -471,37 +744,47 @@ with col1:
 
 with col2:
     st.subheader("Tageszeiten")
-    current_year, current_month, days_in_month = get_current_month_info()
     month_name = calendar.month_name[current_month]
     st.caption(
         f"Aktueller Monat: {month_name} {current_year}. "
-        "Werktage werden hervorgehoben. Zeit als 0801, 801, 8:01 oder 08:01 eingeben. Feste Kostenstelle optional."
+        "Pro Tag sind bis zu zwei Segmente möglich. Werktage werden hervorgehoben. Zeit als 0801, 801, 8:01 oder 08:01 eingeben. Feste Kostenstelle optional."
     )
 
     day_inputs = []
     day_validation_errors = []
 
-    header_cols = st.columns([0.55, 0.85, 1.15, 1.25, 1.7])
+    header_cols = st.columns([0.55, 0.85, 1.0, 1.15, 1.0, 1.15, 1.0])
     header_cols[0].markdown("**Tag**")
     header_cols[1].markdown("**Wochentag**")
-    header_cols[2].markdown("**Zeit**")
-    header_cols[3].markdown("**Fest**")
-    header_cols[4].markdown("**Status**")
+    header_cols[2].markdown("**Zeit 1**")
+    header_cols[3].markdown("**Fest 1**")
+    header_cols[4].markdown("**+ / Zeit 2**")
+    header_cols[5].markdown("**Fest 2**")
+    header_cols[6].markdown("**Status**")
 
     for i in range(days_in_month):
-        row_cols = st.columns([0.55, 0.85, 1.15, 1.25, 1.7])
+        row_cols = st.columns([0.55, 0.85, 1.0, 1.15, 1.0, 1.15, 1.0])
 
         day_number = i + 1
         weekday_name = get_weekday_short_name(day_number)
         is_weekday = is_weekday_in_current_month(day_number)
 
-        time_key = f"time_{i}"
-        fixed_key = f"fixed_{i}"
+        segment_count_key = f"day_segments_{i}"
+        if segment_count_key not in st.session_state:
+            st.session_state[segment_count_key] = 1
 
-        if time_key not in st.session_state:
-            st.session_state[time_key] = ""
-        if fixed_key not in st.session_state:
-            st.session_state[fixed_key] = ""
+        segment_inputs = []
+
+        for segment_index in range(1, MAX_SEGMENTS_PER_DAY + 1):
+            time_key = f"time_{i}_{segment_index}"
+            fixed_key = f"fixed_{i}_{segment_index}"
+
+            if time_key not in st.session_state:
+                st.session_state[time_key] = ""
+            if fixed_key not in st.session_state:
+                st.session_state[fixed_key] = ""
+
+            segment_inputs.append((time_key, fixed_key))
 
         with row_cols[0]:
             st.write(day_number)
@@ -516,46 +799,101 @@ with col2:
             else:
                 st.write(weekday_name)
 
-        with row_cols[2]:
-            time_value = st.text_input(
-                "Zeit",
-                key=time_key,
-                placeholder="HH:MM or HMM",
-                label_visibility="collapsed",
-                on_change=normalize_time_field,
-                args=(time_key,)
-            )
+        day_segments = []
+        row_errors = []
+        filled_segment_count = 0
 
-        with row_cols[3]:
-            fixed_bucket = st.selectbox(
-                "Fest",
-                options=[""] + active_names,
-                key=fixed_key,
-                label_visibility="collapsed"
-            )
+        segment_two_visible = st.session_state.get(segment_count_key, 1) >= 2
 
-        time_error = get_time_validation_message(time_value, fixed_bucket)
-        with row_cols[4]:
+        for segment_index, (time_key, fixed_key) in enumerate(segment_inputs, start=1):
+            if segment_index == 2 and not segment_two_visible:
+                continue
+
+            time_col = row_cols[2] if segment_index == 1 else row_cols[4]
+            fixed_col = row_cols[3] if segment_index == 1 else row_cols[5]
+
+            with time_col:
+                time_value = st.text_input(
+                    f"Zeit {segment_index}",
+                    key=time_key,
+                    placeholder="HH:MM",
+                    label_visibility="collapsed",
+                    on_change=normalize_time_field,
+                    args=(time_key,)
+                )
+
+            with fixed_col:
+                fixed_bucket = st.selectbox(
+                    f"Fest {segment_index}",
+                    options=[""] + active_names,
+                    key=fixed_key,
+                    label_visibility="collapsed"
+                )
+
+            time_error = get_time_validation_message(time_value, fixed_bucket)
             if time_error:
-                day_validation_errors.append(time_error)
-                st.markdown(f"<span style='color:#dc2626;'>{time_error}</span>", unsafe_allow_html=True)
-            elif time_value != "" or fixed_bucket != "":
-                st.markdown("<span style='color:#16a34a;'>OK</span>", unsafe_allow_html=True)
+                row_errors.append(f"S{segment_index}: {time_error}")
+
+            if time_value != "" or fixed_bucket != "":
+                filled_segment_count += 1
+
+            day_segments.append({
+                "segment": segment_index,
+                "time": time_value,
+                "fixed_bucket": fixed_bucket,
+            })
+
+        with row_cols[4]:
+            if segment_two_visible:
+                st.markdown("<span style='color:#6b7280; font-weight:600;'>2. Zeit</span>", unsafe_allow_html=True)
+            else:
+                if st.button(
+                    "+",
+                    key=f"add_segment_{i}",
+                    help="Zweite Zeit hinzufügen",
+                ):
+                    st.session_state[segment_count_key] = 2
+                    st.rerun()
+
+        with row_cols[5]:
+            if segment_two_visible:
+                st.markdown("<span style='color:#6b7280; font-weight:600;'>optional</span>", unsafe_allow_html=True)
+
+        with row_cols[6]:
+            if row_errors:
+                day_validation_errors.extend(row_errors)
+                st.markdown(
+                    "<span style='color:#dc2626; font-weight:600;'>" + "<br>".join(row_errors) + "</span>",
+                    unsafe_allow_html=True,
+                )
+            elif filled_segment_count > 1:
+                st.markdown("<span style='color:#d97706; font-weight:700;'>geteilt</span>", unsafe_allow_html=True)
+            elif filled_segment_count == 1:
+                st.markdown("<span style='color:#6b7280;'>1 Segment</span>", unsafe_allow_html=True)
             else:
                 st.write("")
 
-        day_inputs.append((time_value, fixed_bucket))
-
-can_calculate = percent_sum_valid and len(day_validation_errors) == 0
+        day_inputs.append({"day": day_number, "segments": day_segments})
 
 if day_validation_errors:
     unique_errors = list(dict.fromkeys(day_validation_errors))
     st.warning("Bitte prüfe die markierten Zeilen: " + " | ".join(unique_errors))
 
-calculate_clicked = st.button("Berechnen", type="primary", disabled=not can_calculate)
+can_submit = bool(user_key) and percent_sum_valid and len(day_validation_errors) == 0
 
-if calculate_clicked and can_calculate:
+button_col1, button_col2 = st.columns([1, 1])
+with button_col1:
+    save_clicked = st.button("Speichern", disabled=not can_submit)
+with button_col2:
+    calculate_clicked = st.button("Berechnen", type="primary", disabled=not can_submit)
+
+if save_clicked and can_submit:
+    save_user_month_state(user_key, current_year, current_month, num_buckets, percents, day_inputs)
+    st.success(f"Daten für {user_key} in {calendar.month_name[current_month]} {current_year} gespeichert.")
+
+if calculate_clicked and can_submit:
     try:
+        save_user_month_state(user_key, current_year, current_month, num_buckets, percents, day_inputs)
         result = calculate_distribution(num_buckets, percents, day_inputs)
 
         st.success("Berechnung abgeschlossen.")
@@ -582,6 +920,10 @@ if calculate_clicked and can_calculate:
         else:
             st.info("Keine Zuordnung vorhanden.")
 
+        if result.get("split_days"):
+            split_label = ", ".join(str(day) for day in result["split_days"])
+            st.warning(f"Geteilte Tage: {split_label}")
+
         st.subheader("Projektdetails")
         for name in result["active_names"]:
             info = result["assignments"][name]
@@ -590,7 +932,9 @@ if calculate_clicked and can_calculate:
                 if info["fixed_days"]:
                     st.write("**Fest zugeordnet:**")
                     for d in info["fixed_days"]:
-                        st.write(f"- Tag {d['day']}: {d['time']}")
+                        suffix = " (geteilt)" if d["day"] in result.get("split_days", []) else ""
+                        segment_label = f" / Segment {d.get('segment', 1)}" if d.get("segment", 1) else ""
+                        st.write(f"- Tag {d['day']}{segment_label}: {d['time']}{suffix}")
                     st.write(f"Fest-Summe: **{minutes_to_time(info['fixed_sum'])}**")
                 else:
                     st.write("**Fest zugeordnet:** keine")
@@ -598,7 +942,9 @@ if calculate_clicked and can_calculate:
                 if info["auto_days"]:
                     st.write("**Automatisch zugeordnet:**")
                     for d in info["auto_days"]:
-                        st.write(f"- Tag {d['day']}: {d['time']}")
+                        suffix = " (geteilt)" if d["day"] in result.get("split_days", []) else ""
+                        segment_label = f" / Segment {d.get('segment', 1)}" if d.get("segment", 1) else ""
+                        st.write(f"- Tag {d['day']}{segment_label}: {d['time']}{suffix}")
                     st.write(f"Auto-Summe: **{minutes_to_time(info['auto_sum'])}**")
                 else:
                     st.write("**Automatisch zugeordnet:** keine")
