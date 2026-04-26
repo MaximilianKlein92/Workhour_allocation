@@ -822,7 +822,7 @@ with col2:
         "Pro Tag sind bis zu zwei Segmente möglich. Werktage werden hervorgehoben. "
         "BW- und DITF-Feiertage werden wie Wochenende behandelt. Zeit als 0801, 801, 8:01 oder 08:01 eingeben. Feste Kostenstelle optional."
     )
-    mobile_layout = st.toggle("Mobile Ansicht (kompakt)", value=True, key="mobile_layout")
+    mobile_layout = st.toggle("Mobile Ansicht", value=True, key="mobile_layout")
 
     day_inputs = []
     day_validation_errors = []
@@ -865,7 +865,7 @@ with col2:
 
         if mobile_layout:
             with st.container(border=True):
-                top_cols = st.columns([1.0, 1.0, 0.6])
+                top_cols = st.columns([1.0, 1.0])
                 with top_cols[0]:
                     st.markdown(f"**Tag {day_number}**")
                 with top_cols[1]:
@@ -876,11 +876,6 @@ with col2:
                         )
                     else:
                         st.markdown(f"**{weekday_name}**")
-                with top_cols[2]:
-                    if not segment_two_visible:
-                        if st.button("+", key=f"add_segment_{i}", help="Zweite Zeit hinzufügen"):
-                            st.session_state[segment_count_key] = 2
-                            st.rerun()
 
                 seg1_cols = st.columns([1, 1])
                 with seg1_cols[0]:
@@ -897,6 +892,13 @@ with col2:
                         options=[""] + active_names,
                         key=segment_inputs[0][1],
                     )
+
+                if not segment_two_visible:
+                    add_cols = st.columns([1, 1])
+                    with add_cols[1]:
+                        if st.button("+", key=f"add_segment_{i}", help="Zweite Zeit hinzufügen"):
+                            st.session_state[segment_count_key] = 2
+                            st.rerun()
 
                 time_error = get_time_validation_message(time_value, fixed_bucket)
                 if time_error:
