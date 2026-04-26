@@ -53,19 +53,6 @@ def get_month_storage_path(year, month):
     return get_data_directory() / f"zeiten_{year:04d}-{month:02d}.csv"
 
 
-def get_previous_month_info():
-    today = date.today()
-    if today.month == 1:
-        year = today.year - 1
-        month = 12
-    else:
-        year = today.year
-        month = today.month - 1
-
-    days_in_month = calendar.monthrange(year, month)[1]
-    return year, month, days_in_month
-
-
 def get_storage_fieldnames():
     return [
         "month_key",
@@ -233,13 +220,17 @@ def save_user_month_state(user_code, year, month, num_buckets, percents, all_day
         writer.writerows(rows_to_write)
 
 
-def delete_previous_month_storage():
-    year, month, _ = get_previous_month_info()
-    storage_path = get_month_storage_path(year, month)
-    if storage_path.exists():
-        storage_path.unlink()
-        return True, storage_path
-    return False, storage_path
+def cleanup_non_current_month_files(current_year, current_month):
+    current_name = f"zeiten_{current_year:04d}-{current_month:02d}.csv"
+    data_dir = get_data_directory()
+
+    deleted_files = []
+    for file_path in data_dir.glob("zeiten_*.csv"):
+        if file_path.name != current_name:
+            file_path.unlink(missing_ok=True)
+            deleted_files.append(file_path.name)
+
+    return deleted_files
 
 
 def get_random_media_image():
@@ -679,7 +670,12 @@ st.markdown("Schnelle Verteilung mit fixer Zuordnung einzelner Tage und automati
 current_year, current_month, days_in_month = get_current_month_info()
 current_month_key = get_month_key(current_year, current_month)
 
-header_col1, header_col2, header_col3 = st.columns([1.3, 1.0, 1.0])
+cleanup_key = f"{current_year:04d}-{current_month:02d}"
+if st.session_state.get("_cleanup_done_for_month") != cleanup_key:
+    cleanup_non_current_month_files(current_year, current_month)
+    st.session_state["_cleanup_done_for_month"] = cleanup_key
+
+header_col1, header_col2, header_col3 = st.columns([1.3, 1.0, 0.8])
 
 with header_col1:
     user_input = st.text_input("Benutzerkürzel", placeholder="MaKl", key="user_initials")
@@ -701,16 +697,23 @@ with header_col1:
         st.session_state["_loaded_user"] = ""
         st.session_state["_loaded_month"] = current_month_key
 
+if st.session_state.get("_pending_reset"):
+    if user_key:
+        reset_user_workspace_state()
+        st.session_state["_loaded_user"] = user_key
+        st.session_state["_loaded_month"] = current_month_key
+        st.success("Eingaben wurden zurückgesetzt.")
+    st.session_state["_pending_reset"] = False
+
 with header_col2:
     st.info(f"Monat: {calendar.month_name[current_month]} {current_year}")
 
 with header_col3:
-    if st.button("Vorherigen Monat löschen"):
-        deleted, storage_path = delete_previous_month_storage()
-        if deleted:
-            st.success(f"Gelöscht: {storage_path.name}")
-        else:
-            st.info(f"Keine Datei gefunden: {storage_path.name}")
+    reset_clicked = st.button("Reset", disabled=not bool(user_key))
+
+if reset_clicked and user_key:
+    st.session_state["_pending_reset"] = True
+    st.rerun()
 
 col1, col2 = st.columns([1, 2])
 
