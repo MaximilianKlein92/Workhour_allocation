@@ -822,22 +822,22 @@ with col2:
         "Pro Tag sind bis zu zwei Segmente möglich. Werktage werden hervorgehoben. "
         "BW- und DITF-Feiertage werden wie Wochenende behandelt. Zeit als 0801, 801, 8:01 oder 08:01 eingeben. Feste Kostenstelle optional."
     )
+    mobile_layout = st.toggle("Mobile Ansicht (kompakt)", value=True, key="mobile_layout")
 
     day_inputs = []
     day_validation_errors = []
 
-    header_cols = st.columns([0.55, 0.85, 1.0, 1.15, 1.0, 1.15, 1.0])
-    header_cols[0].markdown("**Tag**")
-    header_cols[1].markdown("**Wochentag**")
-    header_cols[2].markdown("**Zeit 1**")
-    header_cols[3].markdown("**Fest 1**")
-    header_cols[4].markdown("**+ / Zeit 2**")
-    header_cols[5].markdown("**Fest 2**")
-    header_cols[6].markdown("**Status**")
+    if not mobile_layout:
+        header_cols = st.columns([0.55, 0.85, 1.0, 1.15, 1.0, 1.15, 1.0])
+        header_cols[0].markdown("**Tag**")
+        header_cols[1].markdown("**Wochentag**")
+        header_cols[2].markdown("**Zeit 1**")
+        header_cols[3].markdown("**Fest 1**")
+        header_cols[4].markdown("**+ / Zeit 2**")
+        header_cols[5].markdown("**Fest 2**")
+        header_cols[6].markdown("**Status**")
 
     for i in range(days_in_month):
-        row_cols = st.columns([0.55, 0.85, 1.0, 1.15, 1.0, 1.15, 1.0])
-
         day_number = i + 1
         weekday_name = get_weekday_short_name(day_number)
         is_weekday = is_weekday_in_current_month(day_number)
@@ -847,7 +847,6 @@ with col2:
             st.session_state[segment_count_key] = 1
 
         segment_inputs = []
-
         for segment_index in range(1, MAX_SEGMENTS_PER_DAY + 1):
             time_key = f"time_{i}_{segment_index}"
             fixed_key = f"fixed_{i}_{segment_index}"
@@ -859,92 +858,167 @@ with col2:
 
             segment_inputs.append((time_key, fixed_key))
 
-        with row_cols[0]:
-            st.write(day_number)
-
-        with row_cols[1]:
-            if is_weekday:
-                st.markdown(
-                    f"<div style='display:inline-block; background-color:rgba(245, 158, 11, 0.25); color:inherit; border:1px solid rgba(245, 158, 11, 0.95); padding:0.18rem 0.45rem; border-radius:0.35rem; font-weight:600;'>"
-                    f"{weekday_name}</div>",
-                    unsafe_allow_html=True,
-                )
-            else:
-                st.write(weekday_name)
-
+        segment_two_visible = st.session_state.get(segment_count_key, 1) >= 2
         day_segments = []
         row_errors = []
         filled_segment_count = 0
 
-        segment_two_visible = st.session_state.get(segment_count_key, 1) >= 2
+        if mobile_layout:
+            with st.container(border=True):
+                top_cols = st.columns([1.0, 1.0, 0.6])
+                with top_cols[0]:
+                    st.markdown(f"**Tag {day_number}**")
+                with top_cols[1]:
+                    if is_weekday:
+                        st.markdown(
+                            f"<div style='display:inline-block; background-color:rgba(245, 158, 11, 0.25); color:inherit; border:1px solid rgba(245, 158, 11, 0.95); padding:0.18rem 0.45rem; border-radius:0.35rem; font-weight:600;'>{weekday_name}</div>",
+                            unsafe_allow_html=True,
+                        )
+                    else:
+                        st.markdown(f"**{weekday_name}**")
+                with top_cols[2]:
+                    if not segment_two_visible:
+                        if st.button("+", key=f"add_segment_{i}", help="Zweite Zeit hinzufügen"):
+                            st.session_state[segment_count_key] = 2
+                            st.rerun()
 
-        for segment_index, (time_key, fixed_key) in enumerate(segment_inputs, start=1):
-            if segment_index == 2 and not segment_two_visible:
-                continue
+                seg1_cols = st.columns([1, 1])
+                with seg1_cols[0]:
+                    time_value = st.text_input(
+                        "Zeit 1",
+                        key=segment_inputs[0][0],
+                        placeholder="HH:MM",
+                        on_change=normalize_time_field,
+                        args=(segment_inputs[0][0],),
+                    )
+                with seg1_cols[1]:
+                    fixed_bucket = st.selectbox(
+                        "Fest 1",
+                        options=[""] + active_names,
+                        key=segment_inputs[0][1],
+                    )
 
-            time_col = row_cols[2] if segment_index == 1 else row_cols[4]
-            fixed_col = row_cols[3] if segment_index == 1 else row_cols[5]
+                time_error = get_time_validation_message(time_value, fixed_bucket)
+                if time_error:
+                    row_errors.append(f"S1: {time_error}")
+                if time_value != "" or fixed_bucket != "":
+                    filled_segment_count += 1
+                day_segments.append({"segment": 1, "time": time_value, "fixed_bucket": fixed_bucket})
 
-            with time_col:
-                time_value = st.text_input(
-                    f"Zeit {segment_index}",
-                    key=time_key,
-                    placeholder="HH:MM",
-                    label_visibility="collapsed",
-                    on_change=normalize_time_field,
-                    args=(time_key,)
-                )
+                if segment_two_visible:
+                    seg2_cols = st.columns([1, 1])
+                    with seg2_cols[0]:
+                        time_value2 = st.text_input(
+                            "Zeit 2",
+                            key=segment_inputs[1][0],
+                            placeholder="HH:MM",
+                            on_change=normalize_time_field,
+                            args=(segment_inputs[1][0],),
+                        )
+                    with seg2_cols[1]:
+                        fixed_bucket2 = st.selectbox(
+                            "Fest 2",
+                            options=[""] + active_names,
+                            key=segment_inputs[1][1],
+                        )
 
-            with fixed_col:
-                fixed_bucket = st.selectbox(
-                    f"Fest {segment_index}",
-                    options=[""] + active_names,
-                    key=fixed_key,
-                    label_visibility="collapsed"
-                )
+                    time_error2 = get_time_validation_message(time_value2, fixed_bucket2)
+                    if time_error2:
+                        row_errors.append(f"S2: {time_error2}")
+                    if time_value2 != "" or fixed_bucket2 != "":
+                        filled_segment_count += 1
+                    day_segments.append({"segment": 2, "time": time_value2, "fixed_bucket": fixed_bucket2})
 
-            time_error = get_time_validation_message(time_value, fixed_bucket)
-            if time_error:
-                row_errors.append(f"S{segment_index}: {time_error}")
+                if row_errors:
+                    day_validation_errors.extend(row_errors)
+                    st.error(" | ".join(row_errors))
+                elif filled_segment_count > 1:
+                    st.caption("Status: geteilt")
+                elif filled_segment_count == 1:
+                    st.caption("Status: 1 Segment")
+        else:
+            row_cols = st.columns([0.55, 0.85, 1.0, 1.15, 1.0, 1.15, 1.0])
 
-            if time_value != "" or fixed_bucket != "":
-                filled_segment_count += 1
+            with row_cols[0]:
+                st.write(day_number)
 
-            day_segments.append({
-                "segment": segment_index,
-                "time": time_value,
-                "fixed_bucket": fixed_bucket,
-            })
+            with row_cols[1]:
+                if is_weekday:
+                    st.markdown(
+                        f"<div style='display:inline-block; background-color:rgba(245, 158, 11, 0.25); color:inherit; border:1px solid rgba(245, 158, 11, 0.95); padding:0.18rem 0.45rem; border-radius:0.35rem; font-weight:600;'>"
+                        f"{weekday_name}</div>",
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.write(weekday_name)
 
-        with row_cols[4]:
-            if segment_two_visible:
-                st.markdown("<span style='color:#6b7280; font-weight:600;'>2. Zeit</span>", unsafe_allow_html=True)
-            else:
-                if st.button(
-                    "+",
-                    key=f"add_segment_{i}",
-                    help="Zweite Zeit hinzufügen",
-                ):
-                    st.session_state[segment_count_key] = 2
-                    st.rerun()
+            for segment_index, (time_key, fixed_key) in enumerate(segment_inputs, start=1):
+                if segment_index == 2 and not segment_two_visible:
+                    continue
 
-        with row_cols[5]:
-            if segment_two_visible:
-                st.markdown("<span style='color:#6b7280; font-weight:600;'>optional</span>", unsafe_allow_html=True)
+                time_col = row_cols[2] if segment_index == 1 else row_cols[4]
+                fixed_col = row_cols[3] if segment_index == 1 else row_cols[5]
 
-        with row_cols[6]:
-            if row_errors:
-                day_validation_errors.extend(row_errors)
-                st.markdown(
-                    "<span style='color:#dc2626; font-weight:600;'>" + "<br>".join(row_errors) + "</span>",
-                    unsafe_allow_html=True,
-                )
-            elif filled_segment_count > 1:
-                st.markdown("<span style='color:#d97706; font-weight:700;'>geteilt</span>", unsafe_allow_html=True)
-            elif filled_segment_count == 1:
-                st.markdown("<span style='color:#6b7280;'>1 Segment</span>", unsafe_allow_html=True)
-            else:
-                st.write("")
+                with time_col:
+                    time_value = st.text_input(
+                        f"Zeit {segment_index}",
+                        key=time_key,
+                        placeholder="HH:MM",
+                        label_visibility="collapsed",
+                        on_change=normalize_time_field,
+                        args=(time_key,)
+                    )
+
+                with fixed_col:
+                    fixed_bucket = st.selectbox(
+                        f"Fest {segment_index}",
+                        options=[""] + active_names,
+                        key=fixed_key,
+                        label_visibility="collapsed"
+                    )
+
+                time_error = get_time_validation_message(time_value, fixed_bucket)
+                if time_error:
+                    row_errors.append(f"S{segment_index}: {time_error}")
+
+                if time_value != "" or fixed_bucket != "":
+                    filled_segment_count += 1
+
+                day_segments.append({
+                    "segment": segment_index,
+                    "time": time_value,
+                    "fixed_bucket": fixed_bucket,
+                })
+
+            with row_cols[4]:
+                if segment_two_visible:
+                    st.markdown("<span style='color:#6b7280; font-weight:600;'>2. Zeit</span>", unsafe_allow_html=True)
+                else:
+                    if st.button(
+                        "+",
+                        key=f"add_segment_{i}",
+                        help="Zweite Zeit hinzufügen",
+                    ):
+                        st.session_state[segment_count_key] = 2
+                        st.rerun()
+
+            with row_cols[5]:
+                if segment_two_visible:
+                    st.markdown("<span style='color:#6b7280; font-weight:600;'>optional</span>", unsafe_allow_html=True)
+
+            with row_cols[6]:
+                if row_errors:
+                    day_validation_errors.extend(row_errors)
+                    st.markdown(
+                        "<span style='color:#dc2626; font-weight:600;'>" + "<br>".join(row_errors) + "</span>",
+                        unsafe_allow_html=True,
+                    )
+                elif filled_segment_count > 1:
+                    st.markdown("<span style='color:#d97706; font-weight:700;'>geteilt</span>", unsafe_allow_html=True)
+                elif filled_segment_count == 1:
+                    st.markdown("<span style='color:#6b7280;'>1 Segment</span>", unsafe_allow_html=True)
+                else:
+                    st.write("")
 
         day_inputs.append({"day": day_number, "segments": day_segments})
 
