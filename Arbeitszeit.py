@@ -286,19 +286,23 @@ def cleanup_non_current_month_files(current_year, current_month):
     return deleted_files
 
 
-def get_random_media_image():
-    media_dir = Path(__file__).with_name("Media")
-    if not media_dir.exists():
+def get_random_image_from_folder(folder_name):
+    image_dir = Path(__file__).parent / folder_name
+    if not image_dir.exists():
         return None
 
     image_files = []
     for extension in ("*.png", "*.jpg", "*.jpeg", "*.webp", "*.gif"):
-        image_files.extend(media_dir.glob(extension))
+        image_files.extend(image_dir.glob(extension))
 
     if not image_files:
         return None
 
     return random.choice(image_files)
+
+
+def get_random_media_image():
+    return get_random_image_from_folder("Media")
 
 
 def normalize_time_input(value: str) -> str:
@@ -716,6 +720,11 @@ def calculate_distribution(num_buckets, percents, all_day_inputs):
 
 
 st.set_page_config(page_title="Zeitverteilung A–J", layout="wide")
+
+header_image = get_random_image_from_folder("Media/Headder")
+if header_image is not None:
+    st.image(str(header_image))
+
 st.title("Zeitverteilung auf Kostenstellen A–J")
 
 st.markdown("Schnelle Verteilung mit fixer Zuordnung einzelner Tage und automatischer Restverteilung.")
