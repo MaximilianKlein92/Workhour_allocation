@@ -2,6 +2,7 @@ import calendar
 import csv
 import random
 from datetime import date
+from datetime import timedelta
 from pathlib import Path
 
 import streamlit as st
@@ -20,11 +21,63 @@ def get_current_month_info():
     return today.year, today.month, days_in_month
 
 
+def get_easter_sunday(year):
+    # Gauß/Oudin algorithm for Gregorian calendar
+    a = year % 19
+    b = year // 100
+    c = year % 100
+    d = b // 4
+    e = b % 4
+    f = (b + 8) // 25
+    g = (b - f + 1) // 3
+    h = (19 * a + b - d - g + 15) % 30
+    i = c // 4
+    k = c % 4
+    l = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * l) // 451
+    month = (h + l - 7 * m + 114) // 31
+    day = ((h + l - 7 * m + 114) % 31) + 1
+    return date(year, month, day)
+
+
+def get_bw_public_holidays(year):
+    easter = get_easter_sunday(year)
+
+    return {
+        date(year, 1, 1),   # Neujahr
+        date(year, 1, 6),   # Heilige Drei Koenige (BW)
+        easter - timedelta(days=2),   # Karfreitag
+        easter + timedelta(days=1),   # Ostermontag
+        date(year, 5, 1),   # Tag der Arbeit
+        easter + timedelta(days=39),  # Christi Himmelfahrt
+        easter + timedelta(days=50),  # Pfingstmontag
+        easter + timedelta(days=60),  # Fronleichnam (BW)
+        date(year, 10, 3),  # Tag der Deutschen Einheit
+        date(year, 11, 1),  # Allerheiligen (BW)
+        date(year, 12, 25), # 1. Weihnachtstag
+        date(year, 12, 26), # 2. Weihnachtstag
+        date(year, 12, 27), # DITF geschlossen
+        date(year, 12, 28), # DITF geschlossen
+        date(year, 12, 29), # DITF geschlossen
+        date(year, 12, 30), # DITF geschlossen
+        date(year, 12, 31), # Silvester
+    }
+
+
+def is_bw_public_holiday(check_date):
+    return check_date in get_bw_public_holidays(check_date.year)
+
+
 def is_weekday_in_current_month(day_number):
     year, month, days_in_month = get_current_month_info()
     if day_number < 1 or day_number > days_in_month:
         return False
-    return date(year, month, day_number).weekday() < 5
+
+    day_date = date(year, month, day_number)
+    if is_bw_public_holiday(day_date):
+        return False
+
+    return day_date.weekday() < 5
 
 
 def get_weekday_short_name(day_number):
@@ -766,7 +819,8 @@ with col2:
     month_name = calendar.month_name[current_month]
     st.caption(
         f"Aktueller Monat: {month_name} {current_year}. "
-        "Pro Tag sind bis zu zwei Segmente möglich. Werktage werden hervorgehoben. Zeit als 0801, 801, 8:01 oder 08:01 eingeben. Feste Kostenstelle optional."
+        "Pro Tag sind bis zu zwei Segmente möglich. Werktage werden hervorgehoben. "
+        "BW- und DITF-Feiertage werden wie Wochenende behandelt. Zeit als 0801, 801, 8:01 oder 08:01 eingeben. Feste Kostenstelle optional."
     )
 
     day_inputs = []

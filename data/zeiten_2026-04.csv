@@ -6,7 +6,7 @@ month_key,initials,record_type,day,segment,time,fixed_bucket,num_buckets,percent
 2026-04,MIYI,meta,,,,,2,20.00,80.00,,,,,,,,
 2026-04,MIYI,day,1,1,04:00,A,,,,,,,,,,,
 2026-04,MIYI,day,1,2,05:00,B,,,,,,,,,,,
-2026-04,MAKL,meta,,,,,3,33.34,33.33,33.33,,,,,,,
+2026-04,MAKL,meta,,,,,2,20.00,80.00,,,,,,,,
 2026-04,MAKL,day,7,1,08:02,,,,,,,,,,,,
 2026-04,MAKL,day,8,1,06:28,,,,,,,,,,,,
 2026-04,MAKL,day,9,1,07:44,,,,,,,,,,,,
@@ -21,3 +21,4 @@ month_key,initials,record_type,day,segment,time,fixed_bucket,num_buckets,percent
 2026-04,MAKL,day,22,1,06:24,,,,,,,,,,,,
 2026-04,MAKL,day,23,1,00:00,,,,,,,,,,,,
 2026-04,MAKL,day,24,1,09:19,,,,,,,,,,,,
+2026-04,MAXIMUS01,meta,,,,,2,20.00,80.00,,,,,,,,
