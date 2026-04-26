@@ -1,14 +1,11 @@
 import calendar
-import base64
 import csv
 import random
 from datetime import date
 from datetime import timedelta
 from pathlib import Path
-import json
 
 import streamlit as st
-import streamlit.components.v1 as components
 
 MAX_DAYS = 31
 MAX_BUCKETS = 10
@@ -307,55 +304,6 @@ def get_random_image_from_folder(folder_name):
         return None
 
     return random.choice(image_files)
-
-
-def get_image_data_uri(image_path):
-    suffix = image_path.suffix.lower()
-    mime_map = {
-        ".jpg": "image/jpeg",
-        ".jpeg": "image/jpeg",
-        ".png": "image/png",
-        ".gif": "image/gif",
-        ".webp": "image/webp",
-    }
-    mime = mime_map.get(suffix, "image/jpeg")
-
-    with image_path.open("rb") as image_file:
-        encoded = base64.b64encode(image_file.read()).decode("ascii")
-
-    return f"data:{mime};base64,{encoded}"
-
-
-def render_header_gallery(folder_name, interval_ms=10000):
-    image_files = get_images_from_folder(folder_name)
-    if not image_files:
-        return
-
-    image_uris = [get_image_data_uri(path) for path in image_files]
-    gallery_id = f"header_gallery_{random.randint(1000, 9999)}"
-    image_json = json.dumps(image_uris)
-
-    gallery_html = f"""
-<div id=\"{gallery_id}\" style=\"width:100%;\">
-  <img id=\"{gallery_id}_img\" src=\"{image_uris[0]}\" style=\"display:block; max-width:100%; height:auto;\" />
-</div>
-<script>
-  (function() {{
-    const images = {image_json};
-    if (!images || images.length <= 1) return;
-
-    let idx = 0;
-    const imgEl = document.getElementById('{gallery_id}_img');
-    if (!imgEl) return;
-
-    setInterval(function() {{
-      idx = (idx + 1) % images.length;
-      imgEl.src = images[idx];
-    }}, {interval_ms});
-  }})();
-</script>
-"""
-    components.html(gallery_html, height=500)
 
 def get_random_media_image():
     return get_random_image_from_folder("Media")
@@ -777,7 +725,9 @@ def calculate_distribution(num_buckets, percents, all_day_inputs):
 
 st.set_page_config(page_title="Zeitverteilung A–J", layout="wide")
 
-render_header_gallery("Media/Headder", interval_ms=10000)
+header_image = get_random_image_from_folder("Media/Headder")
+if header_image is not None:
+    st.image(str(header_image))
 
 st.title("Zeitverteilung auf Kostenstellen A–J")
 
