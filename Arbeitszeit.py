@@ -92,6 +92,34 @@ def normalize_user_code(value):
     return "".join(ch for ch in (value or "").strip() if ch.isalnum()).upper()
 
 
+def detect_mobile_client():
+    mobile_tokens = (
+        "android",
+        "iphone",
+        "ipad",
+        "ipod",
+        "mobile",
+        "windows phone",
+        "blackberry",
+    )
+
+    user_agent = ""
+    try:
+        context = getattr(st, "context", None)
+        if context is not None:
+            headers = getattr(context, "headers", None)
+            if headers:
+                user_agent = str(headers.get("user-agent", ""))
+
+            if not user_agent:
+                user_agent = str(getattr(context, "user_agent", ""))
+    except Exception:
+        user_agent = ""
+
+    ua = user_agent.lower()
+    return any(token in ua for token in mobile_tokens)
+
+
 def get_month_key(year, month):
     return f"{year:04d}-{month:02d}"
 
@@ -741,6 +769,10 @@ if st.session_state.get("_cleanup_done_for_month") != cleanup_key:
     cleanup_non_current_month_files(current_year, current_month)
     st.session_state["_cleanup_done_for_month"] = cleanup_key
 
+if "_mobile_layout_initialized" not in st.session_state:
+    st.session_state["mobile_layout"] = detect_mobile_client()
+    st.session_state["_mobile_layout_initialized"] = True
+
 header_col1, header_col2, header_col3 = st.columns([1.3, 1.0, 0.8])
 
 with header_col1:
@@ -835,7 +867,7 @@ with col2:
         "Pro Tag sind bis zu zwei Segmente möglich. Werktage werden hervorgehoben. "
         "BW- und DITF-Feiertage werden wie Wochenende behandelt. Zeit als 0801, 801, 8:01 oder 08:01 eingeben. Feste Kostenstelle optional."
     )
-    mobile_layout = st.toggle("Mobile Ansicht", value=True, key="mobile_layout")
+    mobile_layout = st.toggle("Mobile Ansicht", key="mobile_layout")
 
     day_inputs = []
     day_validation_errors = []
