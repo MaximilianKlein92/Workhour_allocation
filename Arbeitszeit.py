@@ -449,7 +449,7 @@ if calculate_clicked and can_calculate:
             for index, name in enumerate(result["active_names"])
         }
 
-        legend_domain = list(result["active_names"]) + ["Nicht zugewiesen", "Wochenende"]
+        legend_domain = list(result["active_names"]) + ["Nicht zugewiesen", "Arbeitsfrei"]
         legend_range = [project_colors[name] for name in result["active_names"]] + [
             "#9ca3af",
             "#111827",
@@ -457,16 +457,16 @@ if calculate_clicked and can_calculate:
 
         graph_rows = []
         for day in range(1, days_in_month + 1):
-            is_weekend = calendar.weekday(current_year, current_month, day) >= 5
+            is_non_workday = not is_weekday_in_current_month(day)
             projects = sorted(set(day_to_projects.get(day, [])))
 
-            if is_weekend:
+            if is_non_workday:
                 weekend_minutes = day_total_minutes.get(day, 0) + leftover_day_minutes.get(day, 0)
                 graph_rows.append(
                     {
                         "Tag": day,
                         "Linie": 1,
-                        "Kategorie": "Wochenende",
+                        "Kategorie": "Arbeitsfrei",
                         "Zuordnung": "-",
                         "Minuten": weekend_minutes,
                         "Stunden": round(weekend_minutes / 60, 2),
