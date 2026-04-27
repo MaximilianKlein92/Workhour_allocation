@@ -1,33 +1,50 @@
 # Arbeitszeit-Tool (Streamlit)
 
 Dieses Tool verteilt erfasste Tageszeiten auf Kostenstellen (A-J) anhand einer prozentualen Soll-Verteilung.
-Zusätzlich koennen einzelne Tage fest einer Kostenstelle zugeordnet werden.
+Zusätzlich koennen einzelne Tage oder Segmente fest einer Kostenstelle zugeordnet werden.
 
-## Was das Tool macht
+## Hauptfunktionen
 
-- Erfasst Tageszeiten fuer bis zu 31 Tage
-- Berechnet die Gesamtzeit
-- Verteilt Zeiten auf waehbare Kostenstellen (1 bis 10)
-- Beruecksichtigt feste Zuordnungen pro Tag
-- Verteilt den Rest automatisch mit einer schnellen Heuristik
-- Zeigt Soll/Ist/Abweichung je Kostenstelle
+- Erfassung von Zeiten fuer den aktuellen Monat (bis zu 31 Tage)
+- Bis zu 2 Segmente pro Tag (zweites Segment optional per +)
+- Verteilung auf 1 bis 10 Kostenstellen
+- Prozentverteilung mit Validierung (Summe muss 100% sein)
+- Feste Zuordnung einzelner Segmente zu Kostenstellen
+- Automatische Restverteilung mit schneller Heuristik
+- Ergebnisansichten mit Soll/Ist/Abweichung, Tageszuordnung und Projektdetails
 
-## Features
+## Eingabe und Validierung
 
 - Flexible Zeiteingabe:
-  - `801` -> `08:01`
-  - `0801` -> `08:01`
-  - `8:01` -> `08:01`
-  - `08:01` bleibt `08:01`
-- Validierung der Eingaben (ungueltige Zeiten werden abgefangen)
-- Prozentpruefung: Summe muss 100% ergeben
-- Detailansicht je Kostenstelle:
-  - fest zugeordnete Tage
-  - automatisch zugeordnete Tage
-  - Summen und Abweichung
-- Tabelle "Tag -> Projekt" fuer schnelle Kontrolle
-- Anzeige nicht zugewiesener Tage (falls vorhanden)
-- Verbesserte Tab-Reihenfolge bei der Eingabe (Tag 1 -> Tag 2 -> ...)
+  - 8 -> 08:00
+  - 801 -> 08:01
+  - 0801 -> 08:01
+  - 8:01 -> 08:01
+  - 08:01 bleibt 08:01
+- Inline-Validierung fuer Zeitwerte und feste Zuordnungen
+- Fehlerhafte Zeilen werden markiert und zusammengefasst angezeigt
+- Werktage des aktuellen Monats werden hervorgehoben
+- BW-Feiertage und DITF-Schließtage werden wie Wochenende behandelt
+
+## Benutzerkuerzel und Datenspeicherung
+
+- Monatsdaten werden pro Benutzerkuerzel in CSV gespeichert
+- Entwurf ist auch ohne Benutzerkuerzel moeglich
+- Wenn ein Benutzerkuerzel spaeter eingegeben wird, bleiben bestehende Eingaben erhalten
+- Berechnen ist auch ohne Benutzerkuerzel moeglich (temporäres Ergebnis)
+- Speichern ist nur mit gueltigem Benutzerkuerzel aktiv
+- Beim Speichern/Berechnen werden die aktuellen Eingaben dem aktiven Benutzer zugeordnet
+- Nicht-aktuelle Monatsdateien werden beim App-Start automatisch bereinigt
+
+## Bedienung
+
+1. App starten
+2. Anzahl Kostenstellen waehlen
+3. Prozentwerte eintragen (Summe 100%)
+4. Tageszeiten eingeben, optional feste Zuordnungen setzen
+5. Optional Benutzerkuerzel setzen (spätestens vor Speichern/Berechnen)
+6. Speichern oder Berechnen ausfuehren
+7. Ergebnisse in Uebersicht, Tag->Projekt und Projektdetails pruefen
 
 ## Starten
 
@@ -37,19 +54,20 @@ Im Projektordner ausfuehren:
 streamlit run Arbeitszeit.py
 ```
 
-Dann die im Terminal angezeigte URL im Browser oeffnen (meist `http://localhost:8501`).
+Danach die im Terminal angezeigte URL im Browser oeffnen.
 
-## Typischer Ablauf
+## Projektstruktur
 
-1. Anzahl Kostenstellen einstellen
-2. Prozentwerte pro Kostenstelle eingeben (Summe = 100)
-3. Tageszeiten eintragen
-4. Optional feste Kostenstelle pro Tag waehlen
-5. Auf "Berechnen" klicken
-6. Ergebnisse in Uebersicht und Details pruefen
+- Arbeitszeit.py: Streamlit-UI und Orchestrierung
+- allocation.py: Verteilungslogik (Greedy + lokale Verbesserungen)
+- storage.py: CSV-Persistenz pro Monat/Benutzer und Lade-/Speicherlogik
+- holidays.py: Monats- und Feiertagslogik (BW + DITF)
+- time_utils.py: Zeitnormalisierung und Zeitvalidierung
+- media_utils.py: Zufallsbilder fuer Header und Warteanzeige
+- device_utils.py: Mobile-Erkennung fuer Standardlayout
+- config.py: Zentrale Konstanten
 
-## Technische Hinweise
+## Hinweise
 
-- UI und Logik laufen in einer Streamlit-App
-- Die automatische Verteilung arbeitet heuristisch (greedy + lokale Verbesserung durch Moves/Swaps)
-- Ziel ist eine moeglichst kleine Gesamtabweichung zwischen Soll und Ist
+- Die Verteilung ist heuristisch optimiert und auf geringe Gesamtabweichung ausgelegt.
+- Vor jeder Berechnung werden die aktuellen Eingaben gespeichert.

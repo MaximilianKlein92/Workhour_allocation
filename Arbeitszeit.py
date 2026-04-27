@@ -16,7 +16,7 @@ from storage import (
     reset_user_workspace_state,
     save_user_month_state,
 )
-from time_utils import get_time_validation_message, minutes_to_time, normalize_time_field
+from time_utils import get_time_validation_message, minutes_to_time, normalize_time_field, time_to_minutes
 
 
 def has_day_input_draft():
@@ -357,22 +357,23 @@ if day_validation_errors:
     st.warning("Bitte prüfe die markierten Zeilen: " + " | ".join(unique_errors))
 
 is_input_valid = percent_sum_valid and len(day_validation_errors) == 0
-can_submit = bool(user_key) and is_input_valid
+can_calculate = is_input_valid
+can_save = bool(user_key) and is_input_valid
 
 if not user_key:
-    st.info("Bitte einen Benutzerkürzel oben eingeben um die Ergebnisse zu berechnen/speichern.")
+    st.info("Berechnen ist ohne Benutzerkürzel möglich (temporär). Speichern erfordert ein Benutzerkürzel.")
 
 button_col1, button_col2 = st.columns([1, 1])
 with button_col1:
-    save_clicked = st.button("Speichern", disabled=not can_submit)
+    save_clicked = st.button("Speichern", disabled=not can_save)
 with button_col2:
-    calculate_clicked = st.button("Berechnen", type="primary", disabled=not can_submit)
+    calculate_clicked = st.button("Berechnen", type="primary", disabled=not can_calculate)
 
-if save_clicked and can_submit:
+if save_clicked and can_save:
     save_user_month_state(user_key, current_year, current_month, num_buckets, percents, day_inputs)
     st.success(f"Daten für {user_key} in {calendar.month_name[current_month]} {current_year} gespeichert.")
 
-if calculate_clicked and can_submit:
+if calculate_clicked and can_calculate:
     loading_placeholder = st.empty()
     try:
         random_image = get_random_media_image()
@@ -385,11 +386,17 @@ if calculate_clicked and can_submit:
             st.info("Kein Bild im Media-Ordner gefunden.")
 
         loading_placeholder.caption("Berechnung läuft ...")
-        save_user_month_state(user_key, current_year, current_month, num_buckets, percents, day_inputs)
+        if user_key:
+            save_user_month_state(user_key, current_year, current_month, num_buckets, percents, day_inputs)
+        else:
+            st.info("Berechnung ohne Benutzerkürzel: Ergebnis wird nicht gespeichert.")
         result = calculate_distribution(num_buckets, percents, day_inputs)
         loading_placeholder.empty()
 
-        st.success("Berechnung abgeschlossen.")
+        if user_key:
+            st.success("Berechnung abgeschlossen und Ergebnis gespeichert.")
+        else:
+            st.success("Berechnung abgeschlossen.")
 
         st.subheader("Übersicht")
         st.write(f"**Gesamtzeit:** {minutes_to_time(result['total_minutes'])}")
@@ -406,6 +413,168 @@ if calculate_clicked and can_submit:
                 "Abweichung": minutes_to_time(info["diff"])
             })
         st.table(target_rows)
+
+        st.subheader("Tages-Graph")
+        day_to_projects = {day: [] for day in range(1, days_in_month + 1)}
+        day_project_minutes = {day: {} for day in range(1, days_in_month + 1)}
+        day_total_minutes = {day: 0 for day in range(1, days_in_month + 1)}
+        for row in result["day_project_rows"]:
+            day = int(row["Tag"])
+            project = str(row["Projekt"])
+            minutes = time_to_minutes(str(row["Zeit"]), assume_normalized=True)
+            day_to_projects.setdefault(day, []).append(project)
+            day_project_minutes.setdefault(day, {})[project] = day_project_minutes.setdefault(day, {}).get(project, 0) + minutes
+            day_total_minutes[day] = day_total_minutes.get(day, 0) + minutes
+
+        leftover_day_minutes = {}
+        for leftover in result.get("leftovers", []):
+            day = int(leftover["day"])
+            minutes = int(leftover.get("minutes", 0))
+            leftover_day_minutes[day] = leftover_day_minutes.get(day, 0) + minutes
+
+        project_palette = [
+            "#2563eb",
+            "#16a34a",
+            "#dc2626",
+            "#0891b2",
+            "#ca8a04",
+            "#7c3aed",
+            "#db2777",
+            "#0f766e",
+            "#b45309",
+            "#4f46e5",
+        ]
+        project_colors = {
+            name: project_palette[index % len(project_palette)]
+            for index, name in enumerate(result["active_names"])
+        }
+
+        legend_domain = list(result["active_names"]) + ["Nicht zugewiesen", "Wochenende"]
+        legend_range = [project_colors[name] for name in result["active_names"]] + [
+            "#9ca3af",
+            "#111827",
+        ]
+
+        graph_rows = []
+        for day in range(1, days_in_month + 1):
+            is_weekend = calendar.weekday(current_year, current_month, day) >= 5
+            projects = sorted(set(day_to_projects.get(day, [])))
+
+            if is_weekend:
+                weekend_minutes = day_total_minutes.get(day, 0) + leftover_day_minutes.get(day, 0)
+                graph_rows.append(
+                    {
+                        "Tag": day,
+                        "Linie": 1,
+                        "Kategorie": "Wochenende",
+                        "Zuordnung": "-",
+                        "Minuten": weekend_minutes,
+                        "Stunden": round(weekend_minutes / 60, 2),
+                    }
+                )
+            elif not projects:
+                unassigned_minutes = leftover_day_minutes.get(day, 0)
+                graph_rows.append(
+                    {
+                        "Tag": day,
+                        "Linie": 1,
+                        "Kategorie": "Nicht zugewiesen",
+                        "Zuordnung": "-",
+                        "Minuten": unassigned_minutes,
+                        "Stunden": round(unassigned_minutes / 60, 2),
+                    }
+                )
+            else:
+                spacing = 0.028
+                start = 1 - (spacing * (len(projects) - 1) / 2)
+                for index, project in enumerate(projects):
+                    project_minutes = day_project_minutes.get(day, {}).get(project, 0)
+                    graph_rows.append(
+                        {
+                            "Tag": day,
+                            "Linie": start + (index * spacing),
+                            "Kategorie": project,
+                            "Zuordnung": ", ".join(projects),
+                            "Minuten": project_minutes,
+                            "Stunden": round(project_minutes / 60, 2),
+                        }
+                    )
+
+        max_graph_minutes = max((row["Minuten"] for row in graph_rows), default=1)
+        max_graph_minutes = max(max_graph_minutes, 1)
+
+        st.vega_lite_chart(
+            {
+                "data": {"values": graph_rows},
+                "height": 190,
+                "layer": [
+                    {
+                        "mark": {"type": "line", "color": "#cbd5e1", "strokeWidth": 2},
+                        "encoding": {
+                            "x": {
+                                "field": "Tag",
+                                "type": "quantitative",
+                                "axis": {
+                                    "tickMinStep": 1,
+                                    "values": list(range(1, days_in_month + 1)),
+                                    "labelAngle": 0,
+                                },
+                                "scale": {"domain": [1, days_in_month]},
+                            },
+                            "y": {
+                                "field": "Linie",
+                                "type": "quantitative",
+                                "axis": None,
+                                "scale": {"domain": [0.94, 1.06]},
+                            },
+                        },
+                    },
+                    {
+                        "mark": {"type": "point", "filled": True, "size": 140},
+                        "encoding": {
+                            "x": {
+                                "field": "Tag",
+                                "type": "quantitative",
+                                "axis": {
+                                    "tickMinStep": 1,
+                                    "values": list(range(1, days_in_month + 1)),
+                                    "labelAngle": 0,
+                                },
+                                "scale": {"domain": [1, days_in_month]},
+                            },
+                            "y": {
+                                "field": "Linie",
+                                "type": "quantitative",
+                                "axis": None,
+                                "scale": {"domain": [0.94, 1.06]},
+                            },
+                            "color": {
+                                "field": "Kategorie",
+                                "type": "nominal",
+                                "legend": {"title": "Status / Kostenstelle"},
+                                "scale": {"domain": legend_domain, "range": legend_range},
+                            },
+                            "size": {
+                                "field": "Minuten",
+                                "type": "quantitative",
+                                "legend": None,
+                                "scale": {
+                                    "domain": [0, max_graph_minutes],
+                                    "range": [80, 1200],
+                                },
+                            },
+                            "tooltip": [
+                                {"field": "Tag", "type": "quantitative"},
+                                {"field": "Kategorie", "type": "nominal"},
+                                {"field": "Zuordnung", "type": "nominal"},
+                                {"field": "Stunden", "type": "quantitative"},
+                            ],
+                        },
+                    },
+                ],
+            },
+            use_container_width=True,
+        )
 
         st.subheader("Tag → Projekt")
         if result["day_project_rows"]:
