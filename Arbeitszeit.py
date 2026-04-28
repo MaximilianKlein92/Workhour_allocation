@@ -3,7 +3,12 @@ import calendar
 import streamlit as st
 
 from allocation import calculate_distribution
-from config import BUCKET_NAMES, BUCKET_COLORS, BUCKET_EMOJIS, DEFAULT_BUCKET_COUNT, MAX_DAYS, MAX_SEGMENTS_PER_DAY
+try:
+    from config import BUCKET_NAMES, BUCKET_COLORS, BUCKET_EMOJIS, DEFAULT_BUCKET_COUNT, MAX_DAYS, MAX_SEGMENTS_PER_DAY
+except ImportError:
+    from config import BUCKET_NAMES, BUCKET_COLORS, DEFAULT_BUCKET_COUNT, MAX_DAYS, MAX_SEGMENTS_PER_DAY
+
+    BUCKET_EMOJIS = ["🔵", "🟢", "🔴", "🟡", "🟣", "🟠", "🟤", "⚫", "⚪", "🩵"]
 from device_utils import detect_mobile_client
 from holidays import get_current_month_info, get_weekday_short_name, is_weekday_in_current_month
 from media_utils import get_random_image_from_folder, get_random_media_image
