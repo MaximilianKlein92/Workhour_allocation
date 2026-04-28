@@ -3,7 +3,7 @@ import calendar
 import streamlit as st
 
 from allocation import calculate_distribution
-from config import BUCKET_NAMES, DEFAULT_BUCKET_COUNT, MAX_DAYS, MAX_SEGMENTS_PER_DAY
+from config import BUCKET_NAMES, DEFAULT_BUCKET_COUNT, MAX_DAYS, MAX_SEGMENTS_PER_DAY, BUCKET_COLORS
 from device_utils import detect_mobile_client
 from holidays import get_current_month_info, get_weekday_short_name, is_weekday_in_current_month
 from media_utils import get_random_image_from_folder, get_random_media_image
@@ -27,6 +27,19 @@ def has_day_input_draft():
             if time_value or fixed_value:
                 return True
     return False
+
+
+def bucket_display_label(bucket_name):
+    if not bucket_name:
+        return ""
+
+    color_markers = ["🔵", "🟢", "🔴", "🟡", "🟣", "🟠", "🟤", "⚫", "⚪", "🩵"]
+    try:
+        bucket_index = BUCKET_NAMES.index(bucket_name)
+    except ValueError:
+        bucket_index = 0
+    marker = color_markers[bucket_index % len(color_markers)]
+    return f"{marker} {bucket_name}"
 
 
 st.set_page_config(page_title="Zeitverteilung A–J", layout="wide")
@@ -125,13 +138,18 @@ with col1:
     percents = []
 
     for i, name in enumerate(active_names):
-        p = st.number_input(
-            f"{name} (%)",
-            min_value=0.0,
-            max_value=100.0,
-            step=1.0,
-            key=f"percent_{name}"
-        )
+        color = BUCKET_COLORS[i] if i < len(BUCKET_COLORS) else "#9ca3af"
+        input_cols = st.columns([0.12, 1])
+        with input_cols[0]:
+            st.markdown(f"<div title='{name}' style='width:1.2rem;height:1.2rem;background:{color};border-radius:4px;border:1px solid rgba(0,0,0,0.08);'></div>", unsafe_allow_html=True)
+        with input_cols[1]:
+            p = st.number_input(
+                f"{name} (%)",
+                min_value=0.0,
+                max_value=100.0,
+                step=1.0,
+                key=f"percent_{name}"
+            )
         percents.append(p)
 
     percent_sum = sum(percents)
@@ -156,14 +174,15 @@ with col2:
     day_validation_errors = []
 
     if not mobile_layout:
-        header_cols = st.columns([0.55, 0.85, 1.0, 1.15, 1.0, 1.15, 1.0])
+        header_cols = st.columns([0.55, 0.85, 1.0, 1.15, 1.0, 1.15, 1.0, 0.75])
         header_cols[0].markdown("**Tag**")
         header_cols[1].markdown("**Wochentag**")
         header_cols[2].markdown("**Zeit 1**")
         header_cols[3].markdown("**Fest 1**")
         header_cols[4].markdown("**+ / Zeit 2**")
         header_cols[5].markdown("**Fest 2**")
-        header_cols[6].markdown("**Status**")
+        header_cols[6].markdown("**Aktion**")
+        header_cols[7].markdown("**Status**")
 
     for i in range(days_in_month):
         day_number = i + 1
@@ -171,8 +190,16 @@ with col2:
         is_weekday = is_weekday_in_current_month(day_number)
 
         segment_count_key = f"day_segments_{i}"
+        pending_remove_key = f"remove_segment_pending_{i}"
         if segment_count_key not in st.session_state:
             st.session_state[segment_count_key] = 1
+
+        # Apply pending remove action before widgets are created to avoid session_state conflicts.
+        if st.session_state.pop(pending_remove_key, False):
+            st.session_state[segment_count_key] = 1
+            st.session_state[f"time_{i}_2"] = ""
+            st.session_state[f"fixed_{i}_2"] = ""
+            st.rerun()
 
         segment_inputs = []
         for segment_index in range(1, MAX_SEGMENTS_PER_DAY + 1):
@@ -219,6 +246,7 @@ with col2:
                         "Fest 1",
                         options=[""] + active_names,
                         key=segment_inputs[0][1],
+                        format_func=bucket_display_label,
                     )
 
                 if not segment_two_visible:
@@ -250,6 +278,7 @@ with col2:
                             "Fest 2",
                             options=[""] + active_names,
                             key=segment_inputs[1][1],
+                            format_func=bucket_display_label,
                         )
 
                     time_error2 = get_time_validation_message(time_value2, fixed_bucket2)
@@ -259,6 +288,12 @@ with col2:
                         filled_segment_count += 1
                     day_segments.append({"segment": 2, "time": time_value2, "fixed_bucket": fixed_bucket2})
 
+                    remove_cols = st.columns([1, 1])
+                    with remove_cols[1]:
+                        if st.button("Segment 2 entfernen", key=f"remove_segment_{i}"):
+                            st.session_state[pending_remove_key] = True
+                            st.rerun()
+
                 if row_errors:
                     day_validation_errors.extend(row_errors)
                     st.error(" | ".join(row_errors))
@@ -267,11 +302,7 @@ with col2:
                 elif filled_segment_count == 1:
                     st.caption("Status: 1 Segment")
         else:
-            row_cols = st.columns([0.55, 0.85, 1.0, 1.15, 1.0, 1.15, 1.0])
-
-            with row_cols[0]:
-                st.write(day_number)
-
+            row_cols = st.columns([0.55, 0.85, 1.0, 1.15, 1.0, 1.15, 1.0, 0.75])
             with row_cols[1]:
                 if is_weekday:
                     st.markdown(
@@ -305,6 +336,7 @@ with col2:
                         options=[""] + active_names,
                         key=fixed_key,
                         label_visibility="collapsed"
+                        ,format_func=bucket_display_label,
                     )
 
                 time_error = get_time_validation_message(time_value, fixed_bucket)
@@ -337,6 +369,12 @@ with col2:
                     st.markdown("<span style='color:#6b7280; font-weight:600;'>optional</span>", unsafe_allow_html=True)
 
             with row_cols[6]:
+                if segment_two_visible:
+                    if st.button("S2 entfernen", key=f"remove_segment_{i}"):
+                        st.session_state[pending_remove_key] = True
+                        st.rerun()
+
+            with row_cols[7]:
                 if row_errors:
                     day_validation_errors.extend(row_errors)
                     st.markdown(
@@ -412,7 +450,7 @@ if calculate_clicked and can_calculate:
                 "Ist": minutes_to_time(info["sum"]),
                 "Abweichung": minutes_to_time(info["diff"])
             })
-        st.table(target_rows)
+        # Render target_rows later after project_colors is available to show consistent swatches
 
         st.subheader("Tages-Graph")
         day_to_projects = {day: [] for day in range(1, days_in_month + 1)}
@@ -432,21 +470,9 @@ if calculate_clicked and can_calculate:
             minutes = int(leftover.get("minutes", 0))
             leftover_day_minutes[day] = leftover_day_minutes.get(day, 0) + minutes
 
-        project_palette = [
-            "#2563eb",
-            "#16a34a",
-            "#dc2626",
-            "#0891b2",
-            "#ca8a04",
-            "#7c3aed",
-            "#db2777",
-            "#0f766e",
-            "#b45309",
-            "#4f46e5",
-        ]
         project_colors = {
-            name: project_palette[index % len(project_palette)]
-            for index, name in enumerate(result["active_names"])
+            name: BUCKET_COLORS[BUCKET_NAMES.index(name) % len(BUCKET_COLORS)]
+            for name in result["active_names"]
         }
 
         legend_domain = list(result["active_names"]) + ["Nicht zugewiesen", "Arbeitsfrei"]
@@ -576,9 +602,46 @@ if calculate_clicked and can_calculate:
             use_container_width=True,
         )
 
+        # Render Ziel-Tabelle mit Farbswatches
+        if target_rows:
+            html = "<table style='width:100%; border-collapse:collapse;'>"
+            html += "<thead><tr><th style='text-align:left;padding:6px 8px'>Projekt</th><th style='padding:6px 8px'>Prozent</th><th style='padding:6px 8px'>Soll</th><th style='padding:6px 8px'>Ist</th><th style='padding:6px 8px'>Abweichung</th></tr></thead><tbody>"
+            for row in target_rows:
+                name = row["Projekt"]
+                color = project_colors.get(name, "#9ca3af")
+                html += (
+                    "<tr>"
+                    f"<td style='padding:6px 8px;border-bottom:1px solid #eee'><span style=\"display:inline-block;width:1rem;height:1rem;background:{color};border-radius:3px;margin-right:8px;vertical-align:middle;\"></span>{name}</td>"
+                    f"<td style='padding:6px 8px;border-bottom:1px solid #eee'>{row['Prozent']}</td>"
+                    f"<td style='padding:6px 8px;border-bottom:1px solid #eee'>{row['Soll']}</td>"
+                    f"<td style='padding:6px 8px;border-bottom:1px solid #eee'>{row['Ist']}</td>"
+                    f"<td style='padding:6px 8px;border-bottom:1px solid #eee'>{row['Abweichung']}</td>"
+                    "</tr>"
+                )
+            html += "</tbody></table>"
+            st.markdown("**Übersicht (mit Farben)**", unsafe_allow_html=True)
+            st.markdown(html, unsafe_allow_html=True)
+
         st.subheader("Tag → Projekt")
         if result["day_project_rows"]:
-            st.dataframe(result["day_project_rows"], use_container_width=True, hide_index=True)
+            # Render day->project table with color swatches
+            html = "<table style='width:100%; border-collapse:collapse;'>"
+            # determine columns from first row keys (safest minimal set)
+            html += "<thead><tr><th style='text-align:left;padding:6px 8px'>Tag</th><th style='text-align:left;padding:6px 8px'>Projekt</th><th style='padding:6px 8px'>Zeit</th></tr></thead><tbody>"
+            for row in result["day_project_rows"]:
+                day = row.get("Tag", "")
+                proj = str(row.get("Projekt", ""))
+                time = row.get("Zeit", "")
+                color = project_colors.get(proj, "#9ca3af")
+                html += (
+                    "<tr>"
+                    f"<td style='padding:6px 8px;border-bottom:1px solid #eee'>{day}</td>"
+                    f"<td style='padding:6px 8px;border-bottom:1px solid #eee'><span style=\"display:inline-block;width:1rem;height:1rem;background:{color};border-radius:3px;margin-right:8px;vertical-align:middle;\"></span>{proj}</td>"
+                    f"<td style='padding:6px 8px;border-bottom:1px solid #eee'>{time}</td>"
+                    "</tr>"
+                )
+            html += "</tbody></table>"
+            st.markdown(html, unsafe_allow_html=True)
         else:
             st.info("Keine Zuordnung vorhanden.")
 
@@ -589,13 +652,17 @@ if calculate_clicked and can_calculate:
         st.subheader("Projektdetails")
         for name in result["active_names"]:
             info = result["assignments"][name]
+            color = project_colors.get(name, "#9ca3af")
 
             with st.expander(f"{name} — Soll {minutes_to_time(info['target'])}", expanded=True):
+                # show color swatch and heading inside the expander for consistent visual cue
+                st.markdown(f"<div style='display:flex;align-items:center;margin-bottom:0.35rem;'><span style=\"display:inline-block;width:1rem;height:1rem;background:{color};border-radius:3px;margin-right:8px;\"></span><strong>{name}</strong> — Soll {minutes_to_time(info['target'])}</div>", unsafe_allow_html=True)
+
                 if info["fixed_days"]:
                     st.write("**Fest zugeordnet:**")
                     for d in info["fixed_days"]:
                         suffix = " (geteilt)" if d["day"] in result.get("split_days", []) else ""
-                        segment_label = f" / Segment {d.get('segment', 1)}" if d.get("segment", 1) else ""
+                        segment_label = f" / Segment {d.get('segment', 1)}" if d.get('segment', 1) else ""
                         st.write(f"- Tag {d['day']}{segment_label}: {d['time']}{suffix}")
                     st.write(f"Fest-Summe: **{minutes_to_time(info['fixed_sum'])}**")
                 else:
@@ -605,7 +672,7 @@ if calculate_clicked and can_calculate:
                     st.write("**Automatisch zugeordnet:**")
                     for d in info["auto_days"]:
                         suffix = " (geteilt)" if d["day"] in result.get("split_days", []) else ""
-                        segment_label = f" / Segment {d.get('segment', 1)}" if d.get("segment", 1) else ""
+                        segment_label = f" / Segment {d.get('segment', 1)}" if d.get('segment', 1) else ""
                         st.write(f"- Tag {d['day']}{segment_label}: {d['time']}{suffix}")
                     st.write(f"Auto-Summe: **{minutes_to_time(info['auto_sum'])}**")
                 else:
