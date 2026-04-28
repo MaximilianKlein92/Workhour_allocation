@@ -18,3 +18,17 @@ BUCKET_COLORS = [
 	"#b45309",
 	"#4f46e5",
 ]
+
+# Matching emoji markers for projects A-J. These are used as the visible project signatures in the UI.
+BUCKET_EMOJIS = [
+	"🔵",
+	"🟢",
+	"🔴",
+	"🟡",
+	"🟣",
+	"🟠",
+	"🟤",
+	"⚫",
+	"⚪",
+	"🩵",
+]

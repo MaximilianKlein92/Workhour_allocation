@@ -3,7 +3,7 @@ import calendar
 import streamlit as st
 
 from allocation import calculate_distribution
-from config import BUCKET_NAMES, DEFAULT_BUCKET_COUNT, MAX_DAYS, MAX_SEGMENTS_PER_DAY, BUCKET_COLORS
+from config import BUCKET_NAMES, BUCKET_COLORS, BUCKET_EMOJIS, DEFAULT_BUCKET_COUNT, MAX_DAYS, MAX_SEGMENTS_PER_DAY
 from device_utils import detect_mobile_client
 from holidays import get_current_month_info, get_weekday_short_name, is_weekday_in_current_month
 from media_utils import get_random_image_from_folder, get_random_media_image
@@ -33,13 +33,23 @@ def bucket_display_label(bucket_name):
     if not bucket_name:
         return ""
 
-    color_markers = ["🔵", "🟢", "🔴", "🟡", "🟣", "🟠", "🟤", "⚫", "⚪", "🩵"]
     try:
         bucket_index = BUCKET_NAMES.index(bucket_name)
     except ValueError:
         bucket_index = 0
-    marker = color_markers[bucket_index % len(color_markers)]
+    marker = BUCKET_EMOJIS[bucket_index % len(BUCKET_EMOJIS)]
     return f"{marker} {bucket_name}"
+
+
+def bucket_emoji(bucket_name):
+    if not bucket_name:
+        return ""
+
+    try:
+        bucket_index = BUCKET_NAMES.index(bucket_name)
+    except ValueError:
+        bucket_index = 0
+    return BUCKET_EMOJIS[bucket_index % len(BUCKET_EMOJIS)]
 
 
 st.set_page_config(page_title="Zeitverteilung A–J", layout="wide")
@@ -138,10 +148,10 @@ with col1:
     percents = []
 
     for i, name in enumerate(active_names):
-        color = BUCKET_COLORS[i] if i < len(BUCKET_COLORS) else "#9ca3af"
+        emoji = bucket_emoji(name)
         input_cols = st.columns([0.12, 1])
         with input_cols[0]:
-            st.markdown(f"<div title='{name}' style='width:1.2rem;height:1.2rem;background:{color};border-radius:4px;border:1px solid rgba(0,0,0,0.08);'></div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='font-size:1.05rem; line-height:1.2rem;'>{emoji}</div>", unsafe_allow_html=True)
         with input_cols[1]:
             p = st.number_input(
                 f"{name} (%)",
@@ -608,10 +618,10 @@ if calculate_clicked and can_calculate:
             html += "<thead><tr><th style='text-align:left;padding:6px 8px'>Projekt</th><th style='padding:6px 8px'>Prozent</th><th style='padding:6px 8px'>Soll</th><th style='padding:6px 8px'>Ist</th><th style='padding:6px 8px'>Abweichung</th></tr></thead><tbody>"
             for row in target_rows:
                 name = row["Projekt"]
-                color = project_colors.get(name, "#9ca3af")
+                emoji = bucket_emoji(name)
                 html += (
                     "<tr>"
-                    f"<td style='padding:6px 8px;border-bottom:1px solid #eee'><span style=\"display:inline-block;width:1rem;height:1rem;background:{color};border-radius:3px;margin-right:8px;vertical-align:middle;\"></span>{name}</td>"
+                    f"<td style='padding:6px 8px;border-bottom:1px solid #eee'><span style=\"display:inline-block;margin-right:8px;vertical-align:middle;\">{emoji}</span>{name}</td>"
                     f"<td style='padding:6px 8px;border-bottom:1px solid #eee'>{row['Prozent']}</td>"
                     f"<td style='padding:6px 8px;border-bottom:1px solid #eee'>{row['Soll']}</td>"
                     f"<td style='padding:6px 8px;border-bottom:1px solid #eee'>{row['Ist']}</td>"
@@ -632,11 +642,11 @@ if calculate_clicked and can_calculate:
                 day = row.get("Tag", "")
                 proj = str(row.get("Projekt", ""))
                 time = row.get("Zeit", "")
-                color = project_colors.get(proj, "#9ca3af")
+                emoji = bucket_emoji(proj)
                 html += (
                     "<tr>"
                     f"<td style='padding:6px 8px;border-bottom:1px solid #eee'>{day}</td>"
-                    f"<td style='padding:6px 8px;border-bottom:1px solid #eee'><span style=\"display:inline-block;width:1rem;height:1rem;background:{color};border-radius:3px;margin-right:8px;vertical-align:middle;\"></span>{proj}</td>"
+                    f"<td style='padding:6px 8px;border-bottom:1px solid #eee'><span style=\"display:inline-block;margin-right:8px;vertical-align:middle;\">{emoji}</span>{proj}</td>"
                     f"<td style='padding:6px 8px;border-bottom:1px solid #eee'>{time}</td>"
                     "</tr>"
                 )
@@ -652,11 +662,11 @@ if calculate_clicked and can_calculate:
         st.subheader("Projektdetails")
         for name in result["active_names"]:
             info = result["assignments"][name]
-            color = project_colors.get(name, "#9ca3af")
+            emoji = bucket_emoji(name)
 
             with st.expander(f"{name} — Soll {minutes_to_time(info['target'])}", expanded=True):
                 # show color swatch and heading inside the expander for consistent visual cue
-                st.markdown(f"<div style='display:flex;align-items:center;margin-bottom:0.35rem;'><span style=\"display:inline-block;width:1rem;height:1rem;background:{color};border-radius:3px;margin-right:8px;\"></span><strong>{name}</strong> — Soll {minutes_to_time(info['target'])}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='display:flex;align-items:center;margin-bottom:0.35rem;'><span style=\"display:inline-block;margin-right:8px;\">{emoji}</span><strong>{name}</strong> — Soll {minutes_to_time(info['target'])}</div>", unsafe_allow_html=True)
 
                 if info["fixed_days"]:
                     st.write("**Fest zugeordnet:**")
