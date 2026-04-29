@@ -1,4 +1,5 @@
 import calendar
+import os
 import re
 
 import streamlit as st
@@ -222,6 +223,8 @@ with col1:
                 st.session_state[key] = stable_defaults[i]
 
     st.subheader("Prozentverteilung")
+    if st.button("Ordner zur Nachsicht der Kostenstellen-Verteilung öffnen", key="open_finance_folder"):
+        os.startfile(r"M:\MR\Administration\Intern\Finanzen\Finanz2026")
     active_names = BUCKET_NAMES[:num_buckets]
     percents = []
 
