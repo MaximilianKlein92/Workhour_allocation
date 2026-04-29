@@ -224,7 +224,14 @@ with col1:
 
     st.subheader("Prozentverteilung")
     if st.button("Ordner zur Nachsicht der Kostenstellen-Verteilung öffnen", key="open_finance_folder"):
-        os.startfile(r"M:\MR\Administration\Intern\Finanzen\Finanz2026")
+        finance_folder_path = r"M:\MR\Administration\Intern\Finanzen\Finanz2026"
+        if hasattr(os, "startfile"):
+            os.startfile(finance_folder_path)
+        else:
+            st.warning(
+                "Das Öffnen eines lokalen Ordners ist nur in der Windows-Desktop-Version möglich. "
+                f"Pfad zum Nachsehen: {finance_folder_path}"
+            )
     active_names = BUCKET_NAMES[:num_buckets]
     percents = []
 
@@ -739,7 +746,7 @@ if calculate_clicked and can_calculate:
                     "</tr>"
                 )
             html += "</tbody></table>"
-            st.markdown("**Übersicht (mit Farben)**", unsafe_allow_html=True)
+            st.markdown("**Übersicht**", unsafe_allow_html=True)
             st.markdown(html, unsafe_allow_html=True)
 
         st.subheader("Tag → Projekt")
