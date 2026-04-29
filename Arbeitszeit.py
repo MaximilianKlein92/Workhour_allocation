@@ -318,6 +318,9 @@ with col2:
                     st.caption("Status: 1 Segment")
         else:
             row_cols = st.columns([0.55, 0.85, 1.0, 1.15, 1.0, 1.15, 1.0, 0.75])
+            with row_cols[0]:
+                st.markdown(f"<span style='color:inherit; font-weight:600;'>{day_number}</span>", unsafe_allow_html=True)
+
             with row_cols[1]:
                 if is_weekday:
                     st.markdown(
