@@ -249,6 +249,21 @@ def apply_editable_snapshot(snapshot):
         st.session_state[key] = value
 
 
+def capture_day_input_snapshot():
+    snapshot = {}
+    for day_idx in range(MAX_DAYS):
+        snapshot[f"day_segments_{day_idx}"] = st.session_state.get(f"day_segments_{day_idx}", 1)
+        for segment_index in range(1, MAX_SEGMENTS_PER_DAY + 1):
+            snapshot[f"time_{day_idx}_{segment_index}"] = st.session_state.get(f"time_{day_idx}_{segment_index}", "")
+            snapshot[f"fixed_{day_idx}_{segment_index}"] = st.session_state.get(f"fixed_{day_idx}_{segment_index}", "")
+    return snapshot
+
+
+def restore_day_input_snapshot(snapshot):
+    for key, value in snapshot.items():
+        st.session_state[key] = value
+
+
 def sync_undo_history():
     current_snapshot = capture_editable_snapshot()
 
@@ -381,7 +396,10 @@ project_import_message = st.session_state.pop("_project_import_message", "")
 
 pending_project_import_text = st.session_state.pop("_pending_project_allocation_import", "")
 if pending_project_import_text:
+    pending_day_snapshot = st.session_state.pop("_pending_project_allocation_day_snapshot", None)
     imported, import_message = apply_project_allocation_paste(pending_project_import_text, current_month)
+    if pending_day_snapshot is not None:
+        restore_day_input_snapshot(pending_day_snapshot)
     st.session_state["_project_import_status"] = "success" if imported else "warning"
     st.session_state["_project_import_message"] = import_message
     st.rerun()
@@ -567,6 +585,7 @@ with col2:
             st.write("")
 
         if allocation_import_clicked:
+            st.session_state["_pending_project_allocation_day_snapshot"] = capture_day_input_snapshot()
             st.session_state["_pending_project_allocation_import"] = allocation_paste
             st.rerun()
 

@@ -18,7 +18,7 @@ month_key,initials,record_type,day,segment,time,fixed_bucket,num_buckets,percent
 2026-04,KKK,day,29,1,04:00,,,,,,,,,,,,,,,,,,,,,,
 2026-04,KKK,day,30,1,04:00,,,,,,,,,,,,,,,,,,,,,,
 2026-04,MISUK,meta,,,,,2,,,,,,,,,,,A,B,,,,,,,,
-2026-04,MAKL,meta,,,,,2,,,,,,,,,,,EU Fabulose,AiF PCF,,,,,,,,
+2026-04,MAKL,meta,,,,,2,20.00,80.00,,,,,,,,,EU Fabulose,AiF PCF,,,,,,,,
 2026-04,MAKL,day,7,1,08:02,B,,,,,,,,,,,,,,,,,,,,,
 2026-04,MAKL,day,8,1,06:28,A,,,,,,,,,,,,,,,,,,,,,
 2026-04,MAKL,day,9,1,07:44,,,,,,,,,,,,,,,,,,,,,,
