@@ -1,4 +1,6 @@
+import csv
 import calendar
+import io
 import os
 import re
 
@@ -36,6 +38,30 @@ def has_day_input_draft():
     return False
 
 
+GERMAN_MONTH_NAMES = [
+    "",
+    "Januar",
+    "Februar",
+    "März",
+    "April",
+    "Mai",
+    "Juni",
+    "Juli",
+    "August",
+    "September",
+    "Oktober",
+    "November",
+    "Dezember",
+]
+
+
+def project_display_name(bucket_name):
+    if not bucket_name:
+        return ""
+
+    return str(st.session_state.get(f"project_name_{bucket_name}", bucket_name)).strip() or bucket_name
+
+
 def bucket_display_label(bucket_name):
     if not bucket_name:
         return ""
@@ -45,7 +71,7 @@ def bucket_display_label(bucket_name):
     except ValueError:
         bucket_index = 0
     marker = BUCKET_EMOJIS[bucket_index % len(BUCKET_EMOJIS)]
-    return f"{marker} {bucket_name}"
+    return f"{marker} {project_display_name(bucket_name)}"
 
 
 def bucket_emoji(bucket_name):
@@ -57,6 +83,73 @@ def bucket_emoji(bucket_name):
     except ValueError:
         bucket_index = 0
     return BUCKET_EMOJIS[bucket_index % len(BUCKET_EMOJIS)]
+
+
+def apply_project_allocation_paste(raw_text, target_month):
+    lines = [line.strip("\r") for line in (raw_text or "").splitlines() if line.strip()]
+    if not lines:
+        return False, "Bitte die Projekttabelle einfügen."
+
+    rows = [[cell.strip() for cell in row] for row in csv.reader(io.StringIO("\n".join(lines)), delimiter="\t")]
+    target_month_name = GERMAN_MONTH_NAMES[target_month].casefold()
+
+    header_row_index = None
+    project_name_index = None
+    month_index = None
+
+    for index, row in enumerate(rows):
+        lowered = [cell.casefold() for cell in row]
+        if "projektname" in lowered and target_month_name in lowered:
+            header_row_index = index
+            project_name_index = lowered.index("projektname")
+            month_index = lowered.index(target_month_name)
+            break
+
+    if header_row_index is None or project_name_index is None or month_index is None:
+        return False, f"Spalten 'Projektname' und '{GERMAN_MONTH_NAMES[target_month]}' wurden nicht gefunden."
+
+    entries = []
+    for row in rows[header_row_index + 1:]:
+        if len(row) <= max(project_name_index, month_index):
+            continue
+
+        project_name = row[project_name_index].strip()
+        if not project_name:
+            continue
+
+        raw_percent = row[month_index].strip().replace("%", "")
+        if raw_percent == "":
+            continue
+
+        try:
+            percent_value = float(raw_percent.replace(",", "."))
+        except ValueError:
+            continue
+
+        if percent_value > 0:
+            entries.append((project_name, percent_value))
+
+    if not entries:
+        return False, f"Keine Projekte mit einem Wert für {GERMAN_MONTH_NAMES[target_month]} gefunden."
+
+    original_count = len(entries)
+    active_count = min(original_count, len(BUCKET_NAMES))
+    truncated = original_count > len(BUCKET_NAMES)
+    if truncated:
+        entries = entries[: len(BUCKET_NAMES)]
+
+    for bucket_name, (project_name, percent_value) in zip(BUCKET_NAMES, entries):
+        st.session_state[f"project_name_{bucket_name}"] = project_name
+        st.session_state[f"percent_{bucket_name}"] = percent_value
+
+    st.session_state["num_buckets"] = active_count
+    st.session_state["_last_num_buckets"] = active_count
+
+    total_percent = sum(percent for _, percent in entries)
+    message = f"{active_count} Projekt(e) für {GERMAN_MONTH_NAMES[target_month]} übernommen (Summe {total_percent:.1f} %)."
+    if truncated:
+        message += " Zusätzliche Projekte wurden abgeschnitten."
+    return True, message
 
 
 def apply_report_paste(raw_text, target_year, target_month):
@@ -137,7 +230,7 @@ header_image = get_random_image_from_folder("Media/Headder")
 if header_image is not None:
     st.image(str(header_image))
 
-st.title("Zeitverteilung auf Kostenstellen A–J")
+st.title("Zeitverteilung auf Kostenstellen")
 
 st.markdown("Schnelle Verteilung mit fixer Zuordnung einzelner Tage und automatischer Restverteilung.")
 
@@ -198,6 +291,16 @@ if reset_clicked and user_key:
     st.session_state["_pending_reset"] = True
     st.rerun()
 
+project_import_status = st.session_state.pop("_project_import_status", "")
+project_import_message = st.session_state.pop("_project_import_message", "")
+
+pending_project_import_text = st.session_state.pop("_pending_project_allocation_import", "")
+if pending_project_import_text:
+    imported, import_message = apply_project_allocation_paste(pending_project_import_text, current_month)
+    st.session_state["_project_import_status"] = "success" if imported else "warning"
+    st.session_state["_project_import_message"] = import_message
+    st.rerun()
+
 col1, col2 = st.columns([1, 2])
 
 with col1:
@@ -237,12 +340,13 @@ with col1:
 
     for i, name in enumerate(active_names):
         emoji = bucket_emoji(name)
+        project_name = project_display_name(name)
         input_cols = st.columns([0.12, 1])
         with input_cols[0]:
             st.markdown(f"<div style='font-size:1.05rem; line-height:1.2rem;'>{emoji}</div>", unsafe_allow_html=True)
         with input_cols[1]:
             p = st.number_input(
-                f"{name} (%)",
+                f"{project_name} (%)",
                 min_value=0.0,
                 max_value=100.0,
                 step=1.0,
@@ -287,6 +391,36 @@ with col2:
                 st.success(import_message)
             else:
                 st.warning(import_message)
+
+    with st.expander("Import Projektverteilung", expanded=False):
+        st.caption(
+            f"Öffne die Projekttabelle des aktuellen Monats und geh auf den Reiter: 'Wo arbeite ich wie viel'. Dann Filterst du nach deinem Namen. Kopiere dann die Kompletten Einträge hier rein. Füge die copierte Projekttabelle mit den Spalten 'Projektname' und des aktuellen Monats ('{GERMAN_MONTH_NAMES[current_month]}') steht ein. "
+            "Es werden die Projektnamen und Prozente des aktuellen Monats übernommen."
+        )
+        allocation_paste = st.text_area(
+            "Projekttabelle einfügen",
+            key="project_allocation_paste_text",
+            height=260,
+            placeholder=(
+                "FVNR\tKostenträger\tProjektname\tName\tPersnr\tJanuar\tFebruar\tMärz\tApril\tMai\tJuni\tJuli\tAugust\tSeptember\tOktober\tNovember\tDezember\n"
+                "..."
+            ),
+        )
+        allocation_button_col1, allocation_button_col2 = st.columns([1, 1])
+        with allocation_button_col1:
+            allocation_import_clicked = st.button("Projektverteilung übernehmen", key="import_project_allocation_button")
+        with allocation_button_col2:
+            st.write("")
+
+        if allocation_import_clicked:
+            st.session_state["_pending_project_allocation_import"] = allocation_paste
+            st.rerun()
+
+        if project_import_message:
+            if project_import_status == "success":
+                st.success(project_import_message)
+            elif project_import_status == "warning":
+                st.warning(project_import_message)
 
     mobile_layout = st.toggle("Mobile Ansicht", key="mobile_layout")
 
@@ -573,7 +707,7 @@ if calculate_clicked and can_calculate:
         for name, p in zip(result["active_names"], result["percents"]):
             info = result["assignments"][name]
             target_rows.append({
-                "Projekt": name,
+                "Projekt": bucket_display_label(name),
                 "Prozent": f"{p:.1f} %",
                 "Soll": minutes_to_time(result["targets"][name]),
                 "Ist": minutes_to_time(info["sum"]),
@@ -582,15 +716,17 @@ if calculate_clicked and can_calculate:
         # Render target_rows later after project_colors is available to show consistent swatches
 
         st.subheader("Tages-Graph")
+        project_labels = {name: bucket_display_label(name) for name in result["active_names"]}
         day_to_projects = {day: [] for day in range(1, days_in_month + 1)}
         day_project_minutes = {day: {} for day in range(1, days_in_month + 1)}
         day_total_minutes = {day: 0 for day in range(1, days_in_month + 1)}
         for row in result["day_project_rows"]:
             day = int(row["Tag"])
             project = str(row["Projekt"])
+            project_label = project_labels.get(project, project)
             minutes = time_to_minutes(str(row["Zeit"]), assume_normalized=True)
-            day_to_projects.setdefault(day, []).append(project)
-            day_project_minutes.setdefault(day, {})[project] = day_project_minutes.setdefault(day, {}).get(project, 0) + minutes
+            day_to_projects.setdefault(day, []).append(project_label)
+            day_project_minutes.setdefault(day, {})[project_label] = day_project_minutes.setdefault(day, {}).get(project_label, 0) + minutes
             day_total_minutes[day] = day_total_minutes.get(day, 0) + minutes
 
         leftover_day_minutes = {}
@@ -600,12 +736,12 @@ if calculate_clicked and can_calculate:
             leftover_day_minutes[day] = leftover_day_minutes.get(day, 0) + minutes
 
         project_colors = {
-            name: BUCKET_COLORS[BUCKET_NAMES.index(name) % len(BUCKET_COLORS)]
+            project_labels[name]: BUCKET_COLORS[BUCKET_NAMES.index(name) % len(BUCKET_COLORS)]
             for name in result["active_names"]
         }
 
-        legend_domain = list(result["active_names"]) + ["Nicht zugewiesen", "Arbeitsfrei"]
-        legend_range = [project_colors[name] for name in result["active_names"]] + [
+        legend_domain = list(project_labels.values()) + ["Nicht zugewiesen", "Arbeitsfrei"]
+        legend_range = [project_colors[project_labels[name]] for name in result["active_names"]] + [
             "#9ca3af",
             "#111827",
         ]
@@ -737,10 +873,9 @@ if calculate_clicked and can_calculate:
             html += "<thead><tr><th style='text-align:left;padding:6px 8px'>Projekt</th><th style='padding:6px 8px'>Prozent</th><th style='padding:6px 8px'>Soll</th><th style='padding:6px 8px'>Ist</th><th style='padding:6px 8px'>Abweichung</th></tr></thead><tbody>"
             for row in target_rows:
                 name = row["Projekt"]
-                emoji = bucket_emoji(name)
                 html += (
                     "<tr>"
-                    f"<td style='padding:6px 8px;border-bottom:1px solid #eee'><span style=\"display:inline-block;margin-right:8px;vertical-align:middle;\">{emoji}</span>{name}</td>"
+                    f"<td style='padding:6px 8px;border-bottom:1px solid #eee'>{name}</td>"
                     f"<td style='padding:6px 8px;border-bottom:1px solid #eee'>{row['Prozent']}</td>"
                     f"<td style='padding:6px 8px;border-bottom:1px solid #eee'>{row['Soll']}</td>"
                     f"<td style='padding:6px 8px;border-bottom:1px solid #eee'>{row['Ist']}</td>"
@@ -761,11 +896,11 @@ if calculate_clicked and can_calculate:
                 day = row.get("Tag", "")
                 proj = str(row.get("Projekt", ""))
                 time = row.get("Zeit", "")
-                emoji = bucket_emoji(proj)
+                proj_label = bucket_display_label(proj)
                 html += (
                     "<tr>"
                     f"<td style='padding:6px 8px;border-bottom:1px solid #eee'>{day}</td>"
-                    f"<td style='padding:6px 8px;border-bottom:1px solid #eee'><span style=\"display:inline-block;margin-right:8px;vertical-align:middle;\">{emoji}</span>{proj}</td>"
+                    f"<td style='padding:6px 8px;border-bottom:1px solid #eee'>{proj_label}</td>"
                     f"<td style='padding:6px 8px;border-bottom:1px solid #eee'>{time}</td>"
                     "</tr>"
                 )
@@ -781,11 +916,10 @@ if calculate_clicked and can_calculate:
         st.subheader("Projektdetails")
         for name in result["active_names"]:
             info = result["assignments"][name]
-            emoji = bucket_emoji(name)
+            label = bucket_display_label(name)
 
-            with st.expander(f"{name} — Soll {minutes_to_time(info['target'])}", expanded=True):
-                # show color swatch and heading inside the expander for consistent visual cue
-                st.markdown(f"<div style='display:flex;align-items:center;margin-bottom:0.35rem;'><span style=\"display:inline-block;margin-right:8px;\">{emoji}</span><strong>{name}</strong> — Soll {minutes_to_time(info['target'])}</div>", unsafe_allow_html=True)
+            with st.expander(f"{label} — Soll {minutes_to_time(info['target'])}", expanded=True):
+                st.markdown(f"<div style='margin-bottom:0.35rem;'><strong>{label}</strong> — Soll {minutes_to_time(info['target'])}</div>", unsafe_allow_html=True)
 
                 if info["fixed_days"]:
                     st.write("**Fest zugeordnet:**")

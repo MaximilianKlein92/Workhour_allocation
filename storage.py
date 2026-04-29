@@ -41,7 +41,7 @@ def get_storage_fieldnames():
         "time",
         "fixed_bucket",
         "num_buckets",
-    ] + [f"percent_{name}" for name in BUCKET_NAMES]
+    ] + [f"percent_{name}" for name in BUCKET_NAMES] + [f"project_name_{name}" for name in BUCKET_NAMES]
 
 
 def get_default_percents_for_bucket_count(num_buckets):
@@ -55,6 +55,7 @@ def reset_user_workspace_state():
     st.session_state["num_buckets"] = DEFAULT_BUCKET_COUNT
     for i, name in enumerate(BUCKET_NAMES):
         st.session_state[f"percent_{name}"] = DEFAULT_PERCENT_VALUES[i]
+        st.session_state[f"project_name_{name}"] = name
     st.session_state["_last_num_buckets"] = DEFAULT_BUCKET_COUNT
 
     for i in range(MAX_DAYS):
@@ -85,6 +86,10 @@ def load_user_month_state(user_code, year, month):
             st.session_state["num_buckets"] = max(1, min(MAX_BUCKETS, int(raw_bucket_count)))
 
         for name in BUCKET_NAMES:
+            raw_project_name = meta_row.get(f"project_name_{name}", "").strip()
+            if raw_project_name:
+                st.session_state[f"project_name_{name}"] = raw_project_name
+
             raw_percent = meta_row.get(f"percent_{name}", "").strip()
             if raw_percent == "":
                 continue
@@ -92,6 +97,9 @@ def load_user_month_state(user_code, year, month):
                 st.session_state[f"percent_{name}"] = float(raw_percent)
             except ValueError:
                 pass
+
+    for name in BUCKET_NAMES:
+        st.session_state.setdefault(f"project_name_{name}", name)
 
     for row in user_rows:
         if row.get("record_type") != "day":
@@ -142,9 +150,11 @@ def build_user_month_rows(user_code, year, month, num_buckets, percents, all_day
 
     for name in BUCKET_NAMES:
         meta_row[f"percent_{name}"] = ""
+        meta_row[f"project_name_{name}"] = ""
 
     for name, percent in zip(BUCKET_NAMES[:num_buckets], percents):
         meta_row[f"percent_{name}"] = f"{float(percent):.2f}"
+        meta_row[f"project_name_{name}"] = str(st.session_state.get(f"project_name_{name}", name)).strip() or name
 
     rows.append(meta_row)
 
