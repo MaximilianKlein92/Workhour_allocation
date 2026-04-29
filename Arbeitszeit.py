@@ -187,6 +187,7 @@ with col2:
 
     day_inputs = []
     day_validation_errors = []
+    pending_rerun = False
 
     if not mobile_layout:
         header_cols = st.columns([0.55, 0.85, 1.0, 1.15, 1.0, 1.15, 1.0, 0.75])
@@ -214,7 +215,7 @@ with col2:
             st.session_state[segment_count_key] = 1
             st.session_state[f"time_{i}_2"] = ""
             st.session_state[f"fixed_{i}_2"] = ""
-            st.rerun()
+            pending_rerun = True
 
         segment_inputs = []
         for segment_index in range(1, MAX_SEGMENTS_PER_DAY + 1):
@@ -269,7 +270,7 @@ with col2:
                     with add_cols[1]:
                         if st.button("+", key=f"add_segment_{i}", help="Zweite Zeit hinzufügen"):
                             st.session_state[segment_count_key] = 2
-                            st.rerun()
+                            pending_rerun = True
 
                 time_error = get_time_validation_message(time_value, fixed_bucket)
                 if time_error:
@@ -307,7 +308,7 @@ with col2:
                     with remove_cols[1]:
                         if st.button("Segment 2 entfernen", key=f"remove_segment_{i}"):
                             st.session_state[pending_remove_key] = True
-                            st.rerun()
+                            pending_rerun = True
 
                 if row_errors:
                     day_validation_errors.extend(row_errors)
@@ -380,7 +381,7 @@ with col2:
                         help="Zweite Zeit hinzufügen",
                     ):
                         st.session_state[segment_count_key] = 2
-                        st.rerun()
+                        pending_rerun = True
 
             with row_cols[5]:
                 if segment_two_visible:
@@ -390,7 +391,7 @@ with col2:
                 if segment_two_visible:
                     if st.button("S2 entfernen", key=f"remove_segment_{i}"):
                         st.session_state[pending_remove_key] = True
-                        st.rerun()
+                        pending_rerun = True
 
             with row_cols[7]:
                 if row_errors:
@@ -407,6 +408,9 @@ with col2:
                     st.write("")
 
         day_inputs.append({"day": day_number, "segments": day_segments})
+
+if pending_rerun:
+    st.rerun()
 
 if day_validation_errors:
     unique_errors = list(dict.fromkeys(day_validation_errors))
