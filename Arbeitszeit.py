@@ -565,6 +565,8 @@ if calculate_clicked and can_calculate:
 
         st.subheader("Übersicht")
         st.write(f"**Gesamtzeit:** {minutes_to_time(result['total_minutes'])}")
+        worked_days = len({row["Tag"] for row in result["day_project_rows"]})
+        st.write(f"**Gearbeitete Tage:** {worked_days}")
         st.write(f"**Gesamtabweichung:** {minutes_to_time(result['quality_score'])}")
 
         target_rows = []
