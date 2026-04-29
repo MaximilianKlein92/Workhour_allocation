@@ -1,4 +1,5 @@
 import calendar
+import re
 
 import streamlit as st
 
@@ -21,7 +22,7 @@ from storage import (
     reset_user_workspace_state,
     save_user_month_state,
 )
-from time_utils import get_time_validation_message, minutes_to_time, normalize_time_field, time_to_minutes
+from time_utils import get_time_validation_message, minutes_to_time, normalize_time_field, normalize_time_input, time_to_minutes
 
 
 def has_day_input_draft():
@@ -55,6 +56,78 @@ def bucket_emoji(bucket_name):
     except ValueError:
         bucket_index = 0
     return BUCKET_EMOJIS[bucket_index % len(BUCKET_EMOJIS)]
+
+
+def apply_report_paste(raw_text, target_year, target_month):
+    lines = [line.strip() for line in (raw_text or "").splitlines() if line.strip()]
+    if not lines:
+        return False, "Bitte den kopierten Bericht einfügen."
+
+    start_index = 0
+    for index, line in enumerate(lines):
+        if re.search(r"\b\d{5,8}\b", line):
+            start_index = index
+            break
+
+    relevant_lines = lines[start_index:]
+    dates = []
+    times = []
+
+    for line in relevant_lines:
+        for date_match in re.finditer(r"\b\d{2}\.\d{2}\.\d{4}\b", line):
+            dates.append(date_match.group(0))
+        for time_match in re.finditer(r"\b\d{1,2}:\d{2}(?::\d{2})?\b", line):
+            try:
+                times.append(normalize_time_input(time_match.group(0)))
+            except ValueError:
+                continue
+
+    if not dates:
+        return False, "Keine Datumsangaben im Bericht gefunden."
+
+    if not times:
+        return False, "Keine Zeitangaben im Bericht gefunden."
+
+    parsed_days = {}
+    skipped_other_month = 0
+
+    for date_text, time_text in zip(dates, times):
+        day_text, month_text, year_text = date_text.split(".")
+        day_number = int(day_text)
+        month_number = int(month_text)
+        year_number = int(year_text)
+
+        if year_number != target_year or month_number != target_month:
+            skipped_other_month += 1
+            continue
+
+        if not (1 <= day_number <= MAX_DAYS):
+            continue
+
+        day_index = day_number - 1
+        parsed_days.setdefault(day_index, [])
+        if len(parsed_days[day_index]) < MAX_SEGMENTS_PER_DAY:
+            parsed_days[day_index].append(time_text)
+
+    if not parsed_days:
+        return False, "Keine Einträge für den aktuellen Monat gefunden."
+
+    for day_index, segment_times in parsed_days.items():
+        st.session_state[f"day_segments_{day_index}"] = len(segment_times)
+        for segment_index in range(1, MAX_SEGMENTS_PER_DAY + 1):
+            time_key = f"time_{day_index}_{segment_index}"
+            fixed_key = f"fixed_{day_index}_{segment_index}"
+            if segment_index <= len(segment_times):
+                st.session_state[time_key] = segment_times[segment_index - 1]
+                st.session_state[fixed_key] = ""
+            else:
+                st.session_state[time_key] = ""
+                st.session_state[fixed_key] = ""
+
+    info_parts = [f"{len(parsed_days)} Tag(e) übernommen"]
+    if skipped_other_month:
+        info_parts.append(f"{skipped_other_month} Eintrag(e) anderer Monate ignoriert")
+    return True, "; ".join(info_parts)
 
 
 st.set_page_config(page_title="Zeitverteilung A–J", layout="wide")
@@ -183,6 +256,28 @@ with col2:
         "Pro Tag sind bis zu zwei Segmente möglich. Werktage werden hervorgehoben. "
         "BW- und DITF-Feiertage werden wie Wochenende behandelt. Zeit als 0801, 801, 8:01 oder 08:01 eingeben. Feste Kostenstelle optional."
     )
+
+    with st.expander("Import aus Bericht", expanded=True):
+        st.caption("Kopiere den kompletten Kostenstellenwechsel-Fehlerbericht TEXT (Strg+A --> Strg+C) hier hinein. Es werden nur die Zeiten des aktuellen Monats übernommen; die Kostenstellen bleiben leer.")
+        report_paste = st.text_area(
+            "Bericht einfügen",
+            key="report_paste_text",
+            height=220,
+            placeholder="29.04.2026\nKostenstellenwechsel-Fehlerbericht\n...",
+        )
+        import_button_col1, import_button_col2 = st.columns([1, 1])
+        with import_button_col1:
+            import_clicked = st.button("Übernehmen", key="import_report_button", type="secondary")
+        with import_button_col2:
+            st.write("")
+
+        if import_clicked:
+            imported, import_message = apply_report_paste(report_paste, current_year, current_month)
+            if imported:
+                st.success(import_message)
+            else:
+                st.warning(import_message)
+
     mobile_layout = st.toggle("Mobile Ansicht", key="mobile_layout")
 
     day_inputs = []
