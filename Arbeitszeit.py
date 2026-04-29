@@ -5,6 +5,7 @@ import os
 import re
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 from allocation import calculate_distribution
 try:
@@ -224,6 +225,90 @@ def apply_report_paste(raw_text, target_year, target_month):
     return True, "; ".join(info_parts)
 
 
+def capture_editable_snapshot():
+    snapshot = {
+        "num_buckets": st.session_state.get("num_buckets", DEFAULT_BUCKET_COUNT),
+        "mobile_layout": st.session_state.get("mobile_layout", False),
+    }
+
+    for name in BUCKET_NAMES:
+        snapshot[f"percent_{name}"] = st.session_state.get(f"percent_{name}", 0.0)
+        snapshot[f"project_name_{name}"] = st.session_state.get(f"project_name_{name}", name)
+
+    for day_idx in range(MAX_DAYS):
+        snapshot[f"day_segments_{day_idx}"] = st.session_state.get(f"day_segments_{day_idx}", 1)
+        for segment_index in range(1, MAX_SEGMENTS_PER_DAY + 1):
+            snapshot[f"time_{day_idx}_{segment_index}"] = st.session_state.get(f"time_{day_idx}_{segment_index}", "")
+            snapshot[f"fixed_{day_idx}_{segment_index}"] = st.session_state.get(f"fixed_{day_idx}_{segment_index}", "")
+
+    return snapshot
+
+
+def apply_editable_snapshot(snapshot):
+    for key, value in snapshot.items():
+        st.session_state[key] = value
+
+
+def sync_undo_history():
+    current_snapshot = capture_editable_snapshot()
+
+    if "_undo_current_snapshot" not in st.session_state:
+        st.session_state["_undo_current_snapshot"] = current_snapshot
+        st.session_state.setdefault("_undo_stack", [])
+        st.session_state.setdefault("_redo_stack", [])
+        return
+
+    if st.session_state.pop("_skip_undo_autorecord", False):
+        st.session_state["_undo_current_snapshot"] = current_snapshot
+        return
+
+    previous_snapshot = st.session_state.get("_undo_current_snapshot", {})
+    if current_snapshot != previous_snapshot:
+        undo_stack = st.session_state.get("_undo_stack", [])
+        undo_stack.append(previous_snapshot)
+        st.session_state["_undo_stack"] = undo_stack[-80:]
+        st.session_state["_redo_stack"] = []
+        st.session_state["_undo_current_snapshot"] = current_snapshot
+
+
+def perform_undo():
+    undo_stack = st.session_state.get("_undo_stack", [])
+    if not undo_stack:
+        return False
+
+    current_snapshot = capture_editable_snapshot()
+    target_snapshot = undo_stack.pop()
+
+    redo_stack = st.session_state.get("_redo_stack", [])
+    redo_stack.append(current_snapshot)
+
+    st.session_state["_undo_stack"] = undo_stack
+    st.session_state["_redo_stack"] = redo_stack[-80:]
+    st.session_state["_skip_undo_autorecord"] = True
+    apply_editable_snapshot(target_snapshot)
+    st.session_state["_undo_current_snapshot"] = target_snapshot
+    return True
+
+
+def perform_redo():
+    redo_stack = st.session_state.get("_redo_stack", [])
+    if not redo_stack:
+        return False
+
+    current_snapshot = capture_editable_snapshot()
+    target_snapshot = redo_stack.pop()
+
+    undo_stack = st.session_state.get("_undo_stack", [])
+    undo_stack.append(current_snapshot)
+
+    st.session_state["_undo_stack"] = undo_stack[-80:]
+    st.session_state["_redo_stack"] = redo_stack
+    st.session_state["_skip_undo_autorecord"] = True
+    apply_editable_snapshot(target_snapshot)
+    st.session_state["_undo_current_snapshot"] = target_snapshot
+    return True
+
+
 st.set_page_config(page_title="Zeitverteilung A–J", layout="wide")
 
 header_image = get_random_image_from_folder("Media/Headder")
@@ -300,6 +385,75 @@ if pending_project_import_text:
     st.session_state["_project_import_status"] = "success" if imported else "warning"
     st.session_state["_project_import_message"] = import_message
     st.rerun()
+
+sync_undo_history()
+
+history_col1, history_col2 = st.columns([0.5, 0.5])
+with history_col1:
+        undo_clicked = st.button(
+                "Undo",
+                key="undo_button",
+                disabled=len(st.session_state.get("_undo_stack", [])) == 0,
+                help="undo-history",
+        )
+with history_col2:
+        redo_clicked = st.button(
+                "Redo",
+                key="redo_button",
+                disabled=len(st.session_state.get("_redo_stack", [])) == 0,
+                help="redo-history",
+        )
+
+if undo_clicked and perform_undo():
+        st.rerun()
+
+if redo_clicked and perform_redo():
+        st.rerun()
+
+components.html(
+        """
+        <script>
+        (function () {
+            const parentWin = window.parent;
+            const parentDoc = parentWin && parentWin.document;
+            if (!parentDoc || parentWin.__undoRedoBound) {
+                return;
+            }
+
+            parentWin.__undoRedoBound = true;
+
+            function findButton(label) {
+                return Array.from(parentDoc.querySelectorAll('button')).find(function (button) {
+                    return (button.textContent || '').trim() === label;
+                });
+            }
+
+            parentWin.addEventListener('keydown', function (event) {
+                const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+                const modifierPressed = isMac ? event.metaKey : event.ctrlKey;
+                if (!modifierPressed) {
+                    return;
+                }
+
+                const key = (event.key || '').toLowerCase();
+                const isUndo = key === 'z' && !event.shiftKey;
+                const isRedo = key === 'y' || (key === 'z' && event.shiftKey);
+
+                if (!isUndo && !isRedo) {
+                    return;
+                }
+
+                const button = findButton(isUndo ? 'Undo' : 'Redo');
+                if (button && !button.disabled) {
+                    event.preventDefault();
+                    button.click();
+                }
+            }, true);
+        })();
+        </script>
+        """,
+        height=0,
+)
 
 col1, col2 = st.columns([1, 2])
 
@@ -919,8 +1073,6 @@ if calculate_clicked and can_calculate:
             label = bucket_display_label(name)
 
             with st.expander(f"{label} — Soll {minutes_to_time(info['target'])}", expanded=True):
-                st.markdown(f"<div style='margin-bottom:0.35rem;'><strong>{label}</strong> — Soll {minutes_to_time(info['target'])}</div>", unsafe_allow_html=True)
-
                 if info["fixed_days"]:
                     st.write("**Fest zugeordnet:**")
                     for d in info["fixed_days"]:
